@@ -55,6 +55,7 @@ const main = async () => {
     mainFlowWillLaunch: new AsyncSeriesHook(['args']),
     newChatWillStartup: new AsyncSeriesHook(['positionInfoDetail']),
     newChatStartup: new AsyncSeriesHook(['positionInfoDetail', 'chatRunningContext']),
+    matchReportGenerated: new AsyncSeriesHook(['jobInfo', 'matchResult']),
     noPositionFoundForCurrentJob: new SyncHook(),
     noPositionFoundAfterTraverseAllJob: new SyncHook(),
     errorEncounter: new SyncHook(['errorInfo']),

@@ -12,6 +12,7 @@ import { EventEmitter } from 'node:events'
 import { setDomainLocalStorage } from '@geekgeekrun/utils/puppeteer/local-storage.mjs'
 
 import { readConfigFile, writeStorageFile, ensureConfigFileExist, readStorageFile, ensureStorageFileExist } from './runtime-file-utils.mjs'
+import { evaluateJobMatch } from './llm-match-evaluator.mjs'
 import {
   calculateTotalCombinations,
   combineFiltersWithConstraintsGenerator,
@@ -300,6 +301,11 @@ const blockCompanyNameRegExp = (() => {
   }
 })()
 const blockCompanyNameRegMatchStrategy = readConfigFile('boss.json').blockCompanyNameRegMatchStrategy ?? MarkAsNotSuitOp.NO_OP
+
+const enableAiMatch = readConfigFile('boss.json').enableAiMatch ?? false
+const aiMatchThreshold = readConfigFile('boss.json').aiMatchThreshold ?? 85
+const aiMatchTimeout = readConfigFile('boss.json').aiMatchTimeout ?? 30000
+const aiMatchFallbackStrategy = readConfigFile('boss.json').aiMatchFallbackStrategy ?? MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL
 
 /**
  * @type { import('puppeteer').Browser }
@@ -1452,6 +1458,24 @@ async function toRecommendPage (hooks) {
                   }
                   // #endregion
                   console.log('not suit reason and related strategy: ', notSuitReasonIdToStrategyMap)
+
+                  // #region AI match evaluation
+                  if (enableAiMatch && Object.keys(notSuitReasonIdToStrategyMap).length === 0) {
+                    try {
+                      const matchResult = await evaluateJobMatch(targetJobData)
+                      await hooks.matchReportGenerated?.promise(targetJobData, matchResult)
+                      if (!matchResult || matchResult.score < aiMatchThreshold) {
+                        notSuitReasonIdToStrategyMap.aiMatch = aiMatchFallbackStrategy
+                      }
+                    } catch (err) {
+                      console.log('AI match evaluation failed, skipping job', err)
+                      notSuitReasonIdToStrategyMap.aiMatch = aiMatchFallbackStrategy
+                      try {
+                        await hooks.matchReportGenerated?.promise(targetJobData, null)
+                      } catch {}
+                    }
+                  }
+                  // #endregion
 
                   // #region execute mark logic
                   // 1. find the one mark on Boss

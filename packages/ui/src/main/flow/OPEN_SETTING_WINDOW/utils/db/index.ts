@@ -109,3 +109,12 @@ export const saveAndGetCurrentRunRecord = async () => {
   })
   return res
 }
+
+export const getMatchReport = async ({ pageNo, pageSize }: Partial<PageReq> = {}) => {
+  const res = await createWorkerPromise({
+    type: 'getMatchReport',
+    pageNo,
+    pageSize
+  })
+  return res
+}

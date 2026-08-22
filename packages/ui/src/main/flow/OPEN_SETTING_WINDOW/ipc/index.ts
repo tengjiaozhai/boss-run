@@ -18,7 +18,8 @@ import {
   getCompanyLibrary,
   getJobLibrary,
   getJobHistoryByEncryptId,
-  getMarkAsNotSuitRecord
+  getMarkAsNotSuitRecord,
+  getMatchReport
 } from '../utils/db/index'
 import { PageReq } from '../../../../common/types/pagination'
 import { pipeWriteRegardlessError } from '../../utils/pipe'
@@ -317,6 +318,10 @@ export default function initIpc() {
   })
   ipcMain.handle('get-company-library', async (ev, payload: PageReq) => {
     const a = await getCompanyLibrary(payload)
+    return a
+  })
+  ipcMain.handle('get-match-report', async (ev, payload: PageReq) => {
+    const a = await getMatchReport(payload)
     return a
   })
 

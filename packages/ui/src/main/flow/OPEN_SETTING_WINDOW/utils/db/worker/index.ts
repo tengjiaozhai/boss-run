@@ -12,6 +12,7 @@ import { measureExecutionTime } from '../../../../../../common/utils/performance
 import { PageReq, PagedRes } from '../../../../../../common/types/pagination'
 import { JobInfoChangeLog } from '@geekgeekrun/sqlite-plugin/dist/entity/JobInfoChangeLog'
 import { AutoStartChatRunRecord } from '@geekgeekrun/sqlite-plugin/dist/entity/AutoStartChatRunRecord'
+import { MatchReport } from '@geekgeekrun/sqlite-plugin/dist/entity/MatchReport'
 
 const dbInitPromise = initDb(getPublicDbFilePath())
 let dataSource: DataSource | null = null
@@ -169,6 +170,30 @@ const payloadHandler = {
     const autoStartChatRunRecordRepository = dataSource!.getRepository(AutoStartChatRunRecord)
     const result = await autoStartChatRunRecordRepository.save(autoStartChatRunRecord)
     return result
+  },
+  async getMatchReport({ pageNo, pageSize }: Partial<PageReq> = {}): Promise<PagedRes<MatchReport>> {
+    if (!pageNo) {
+      pageNo = 1
+    }
+    if (!pageSize) {
+      pageSize = 10
+    }
+
+    const matchReportRepository = dataSource!.getRepository(MatchReport)!
+    const [data, totalItemCount] = await measureExecutionTime(
+      matchReportRepository.findAndCount({
+        skip: (pageNo - 1) * pageSize,
+        take: pageSize,
+        order: {
+          date: 'DESC'
+        }
+      })
+    )
+    return {
+      data,
+      pageNo,
+      totalItemCount
+    }
   }
 }
 

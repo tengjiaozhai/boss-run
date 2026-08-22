@@ -40,5 +40,9 @@
   "sageTimeOpTimes": 100,
   "sageTimePauseMinute": 15,
   "blockCompanyNameRegExpStr": "",
-  "fieldsForUseCommonConfig": {}
+  "fieldsForUseCommonConfig": {},
+  "enableAiMatch": false,
+  "aiMatchThreshold": 85,
+  "aiMatchTimeout": 30000,
+  "aiMatchFallbackStrategy": 2
 }

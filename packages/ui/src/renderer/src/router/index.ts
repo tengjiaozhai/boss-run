@@ -126,6 +126,13 @@ const routes: Array<RouteRecordRaw> = [
         meta: {
           title: '公司库'
         }
+      },
+      {
+        path: 'MatchReport',
+        component: () => import('@renderer/page/MainLayout/MatchReport.vue'),
+        meta: {
+          title: 'AI匹配报告'
+        }
       }
     ]
   },

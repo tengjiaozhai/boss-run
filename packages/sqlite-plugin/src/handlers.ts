@@ -12,6 +12,7 @@ import { MarkAsNotSuitLog } from "./entity/MarkAsNotSuitLog";
 import { ChatMessageRecord } from "./entity/ChatMessageRecord";
 import { LlmModelUsageRecord } from "./entity/LlmModelUsageRecord";
 import { JobHireStatusRecord } from "./entity/JobHireStatusRecord";
+import { MatchReport } from "./entity/MatchReport";
 
 function getBossInfoIfIsEqual (savedOne, currentOne) {
   if (savedOne === currentOne) {
@@ -294,6 +295,26 @@ export async function saveMarkAsNotSuitRecord(
   const markAsNotSuitLogRepository = ds.getRepository(MarkAsNotSuitLog);
   await markAsNotSuitLogRepository.save(markAsNotSuitLog);
   //#endregion
+  return
+}
+
+export async function saveMatchReport(
+  ds: DataSource,
+  _jobInfo,
+  { encryptUserId },
+  matchResult
+) {
+  const { jobInfo } = _jobInfo;
+
+  const matchReport = new MatchReport();
+  matchReport.date = new Date();
+  matchReport.encryptCurrentUserId = encryptUserId;
+  matchReport.encryptJobId = jobInfo.encryptId;
+  matchReport.score = matchResult?.score ?? null;
+  matchReport.report = matchResult?.report ?? null;
+
+  const matchReportRepository = ds.getRepository(MatchReport);
+  await matchReportRepository.save(matchReport);
   return
 }
 

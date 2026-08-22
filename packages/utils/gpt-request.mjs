@@ -6,7 +6,11 @@ export async function completes(
     apiKey,
     model
   },
-  messages
+  messages,
+  {
+    max_tokens = 100,
+    temperature = 0.1
+  } = {}
 ) {
   const openai = new OpenAI({
     baseURL,
@@ -17,8 +21,8 @@ export async function completes(
     messages,
     model,
     frequency_penalty: 0,
-    max_tokens: 100,
-    temperature: 0.1
+    max_tokens,
+    temperature
   });
 
   console.log(completion.choices[0].message.content);
