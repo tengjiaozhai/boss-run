@@ -167,6 +167,12 @@ export default function initIpc() {
     if (hasOwn(payload, 'sageTimePauseMinute')) {
       bossConfig.sageTimePauseMinute = payload.sageTimePauseMinute
     }
+    if (hasOwn(payload, 'enableAiMatch')) {
+      bossConfig.enableAiMatch = payload.enableAiMatch
+    }
+    if (hasOwn(payload, 'aiMatchThreshold')) {
+      bossConfig.aiMatchThreshold = payload.aiMatchThreshold
+    }
     if (hasOwn(payload, 'blockCompanyNameRegExpStr')) {
       bossConfig.blockCompanyNameRegExpStr = payload.blockCompanyNameRegExpStr
     }

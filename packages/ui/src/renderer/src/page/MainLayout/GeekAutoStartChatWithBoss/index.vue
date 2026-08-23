@@ -1655,6 +1655,45 @@
               </div>
             </div>
           </el-card>
+          <el-card class="config-section">
+            <div font-size-14px>AI 匹配</div>
+            <div>
+              <el-checkbox
+                v-model="formContent.enableAiMatch"
+                @change="
+                  (v) => {
+                    gtagRenderer('ai_match_enable_changed', { v })
+                  }
+                "
+              >
+                启用 AI 匹配评估
+              </el-checkbox>
+            </div>
+            <div pl-1.5em font-size-12px>
+              <div :style="{ color: formContent.enableAiMatch ? '' : '#aaa' }">
+                通过本地筛选（薪资、城市、活跃度等）的岗位，会交给 LLM
+                评估并生成匹配报告（可在「AI匹配报告」页面查看）。 评估分数低于
+                <el-form-item mb0 inline-block prop="aiMatchThreshold">
+                  <el-input-number
+                    v-model="formContent.aiMatchThreshold"
+                    :step="1"
+                    step-strictly
+                    :precision="0"
+                    :min="0"
+                    :max="100"
+                    :disabled="!formContent.enableAiMatch"
+                    controls-position="right"
+                    @change="
+                      (v) => {
+                        gtagRenderer('ai_match_threshold_changed', { v })
+                      }
+                    "
+                  />
+                </el-form-item>
+                分时，该岗位仅在本地标记为不合适。配置保存后需重新运行任务才生效。
+              </div>
+            </div>
+          </el-card>
         </el-form>
       </div>
       <div class="bg-#f8f8f8 pb10px pt10px">
@@ -1812,6 +1851,8 @@ const formContent = ref({
   isSageTimeEnabled: true,
   sageTimeOpTimes: 100,
   sageTimePauseMinute: 15,
+  enableAiMatch: false,
+  aiMatchThreshold: 85,
   blockCompanyNameRegExpStr: '',
   blockCompanyNameRegMatchStrategy: MarkAsNotSuitOp.NO_OP,
   fieldsForUseCommonConfig: {}
@@ -1972,6 +2013,12 @@ electron.ipcRenderer.invoke('fetch-config-file-content').then((res) => {
     parseFloat(res.config['boss.json'].sageTimePauseMinute) < 0
       ? 15
       : parseFloat(res.config['boss.json'].sageTimePauseMinute)
+  formContent.value.enableAiMatch = res.config['boss.json'].enableAiMatch ?? false
+  const parsedAiMatchThreshold = parseInt(String(res.config['boss.json'].aiMatchThreshold))
+  formContent.value.aiMatchThreshold =
+    isNaN(parsedAiMatchThreshold) || parsedAiMatchThreshold < 0 || parsedAiMatchThreshold > 100
+      ? 85
+      : parsedAiMatchThreshold
   formContent.value.blockCompanyNameRegExpStr =
     res.config['boss.json'].blockCompanyNameRegExpStr?.trim() ?? ''
   formContent.value.blockCompanyNameRegMatchStrategy =
@@ -2071,6 +2118,19 @@ const formRules = {
       }
       if (value < 0 || isNaN(parseFloat(value))) {
         cb(new Error(`最小值为0，请重试`))
+        return
+      }
+      cb()
+    }
+  },
+  aiMatchThreshold: {
+    validator(_, value, cb) {
+      if (!formContent.value.enableAiMatch) {
+        cb()
+        return
+      }
+      if (isNaN(parseInt(value)) || value < 0 || value > 100) {
+        cb(new Error(`请输入0到100之间的整数`))
         return
       }
       cb()
