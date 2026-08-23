@@ -32,10 +32,39 @@ const defaultConfigFileContentMap = {
   'resumes.json': JSON.stringify(defaultResumesConf)
 }
 const runtimeFolderPath = path.join(os.homedir(), '.geekgeekrun')
-export const configFolderPath = path.join(
+const legacyConfigFolderPath = path.join(
   runtimeFolderPath,
   'config'
 )
+const projectConfigFolderPath = path.join(
+  __dirname,
+  'config'
+)
+export const configFolderPath = (() => {
+  try {
+    fs.mkdirSync(projectConfigFolderPath, { recursive: true })
+    return projectConfigFolderPath
+  } catch {
+    // 打包后模块所在目录可能不可写，此时回落到用户目录
+    return legacyConfigFolderPath
+  }
+})()
+
+function migrateLegacyConfigFiles() {
+  if (configFolderPath === legacyConfigFolderPath) {
+    return
+  }
+  configFileNameList.forEach(
+    fileName => {
+      const projectFilePath = path.join(configFolderPath, fileName)
+      const legacyFilePath = path.join(legacyConfigFolderPath, fileName)
+      if (!fs.existsSync(projectFilePath) && fs.existsSync(legacyFilePath)) {
+        fs.copyFileSync(legacyFilePath, projectFilePath)
+      }
+    }
+  )
+}
+migrateLegacyConfigFiles()
 export const writeConfigFile = async (fileName, content, { isSync } = {}) => {
   const filePath = path.join(configFolderPath, fileName)
   const fileContent = JSON.stringify(content)
@@ -145,6 +174,7 @@ const ensureRuntimeFolderPathExist = () => {
 }
 export const ensureConfigFileExist = () => {
   ensureRuntimeFolderPathExist()
+  migrateLegacyConfigFiles()
   ;configFileNameList.forEach(
     fileName => {
       if (!fs.existsSync(
