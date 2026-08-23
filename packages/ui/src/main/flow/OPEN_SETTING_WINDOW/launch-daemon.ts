@@ -34,6 +34,7 @@ export async function launchDaemon() {
       {
         stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
         detached: true,
+        cwd: process.cwd(),
         env: {
           ...process.env
         }

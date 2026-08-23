@@ -2,17 +2,24 @@ import fs from 'node:fs'
 import fsPromise from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
+import { fileURLToPath } from 'node:url'
 
-import defaultDingtalkConf from './default-config-file/dingtalk.json' assert {type: 'json'}
-import defaultBossConf from './default-config-file/boss.json' assert {type: 'json'}
-import defaultTargetCompanyListConf from './default-config-file/target-company-list.json' assert {type: 'json'}
-import defaultLlmConf from './default-config-file/llm.json' assert { type: 'json' }
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
-import defaultBossCookieStorage from './default-storage-file/boss-cookies.json' assert { type: 'json' }
-import defaultBossLocalStorageStorage from './default-storage-file/boss-local-storage.json' assert { type: 'json' }
-import defaultJobNotSuitReasonCodeToTextCacheStorage from './default-storage-file/job-not-suit-reason-code-to-text-cache.json' assert { type: 'json' }
-import defaultMatchReportTemplate from './default-storage-file/match-report-template.md?raw'
-import defaultCommonJobConditionConfig from './default-config-file/common-job-condition-config.json' assert { type: 'json' }
+import defaultDingtalkConf from './default-config-file/dingtalk.json' with {type: 'json'}
+import defaultBossConf from './default-config-file/boss.json' with {type: 'json'}
+import defaultTargetCompanyListConf from './default-config-file/target-company-list.json' with {type: 'json'}
+import defaultLlmConf from './default-config-file/llm.json' with { type: 'json' }
+
+import defaultBossCookieStorage from './default-storage-file/boss-cookies.json' with { type: 'json' }
+import defaultBossLocalStorageStorage from './default-storage-file/boss-local-storage.json' with { type: 'json' }
+import defaultJobNotSuitReasonCodeToTextCacheStorage from './default-storage-file/job-not-suit-reason-code-to-text-cache.json' with { type: 'json' }
+const defaultMatchReportTemplate = fs.readFileSync(
+  path.join(__dirname, 'default-storage-file', 'match-report-template.md'),
+  'utf-8'
+)
+import defaultCommonJobConditionConfig from './default-config-file/common-job-condition-config.json' with { type: 'json' }
 export const configFileNameList = ['boss.json', 'dingtalk.json', 'target-company-list.json', 'llm.json', 'common-job-condition-config.json']
 
 const defaultConfigFileContentMap = {

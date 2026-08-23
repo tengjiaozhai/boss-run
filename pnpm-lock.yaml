@@ -58,6 +58,9 @@ importers:
 
   packages/geek-auto-start-chat-with-boss:
     dependencies:
+      '@geekgeekrun/sqlite-plugin':
+        specifier: workspace:*
+        version: link:../sqlite-plugin
       '@geekgeekrun/utils':
         specifier: workspace:*
         version: link:../utils

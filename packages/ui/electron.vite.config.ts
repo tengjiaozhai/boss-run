@@ -1,10 +1,30 @@
-import { resolve } from 'path'
+import { resolve, join } from 'path'
 import { defineConfig, externalizeDepsPlugin, loadEnv } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
 import UnoCSS from 'unocss/vite'
 import { presetUno, presetAttributify, presetIcons } from 'unocss'
 import transformerDirective from '@unocss/transformer-directives'
 import Replace from 'unplugin-replace/vite'
+import { copyFileSync, mkdirSync, existsSync } from 'fs'
+
+// 复制 default-storage-file 目录到输出目录
+const copyStorageFilesPlugin = () => ({
+  name: 'copy-storage-files',
+  writeBundle(options) {
+    const outDir = options.dir || 'out/main'
+    const sourceDir = resolve(__dirname, '../geek-auto-start-chat-with-boss/default-storage-file')
+    const targetDir = join(outDir, 'default-storage-file')
+    
+    if (!existsSync(targetDir)) {
+      mkdirSync(targetDir, { recursive: true })
+    }
+    
+    copyFileSync(
+      join(sourceDir, 'match-report-template.md'),
+      join(targetDir, 'match-report-template.md')
+    )
+  }
+})
 
 process.env = { ...process.env, ...loadEnv(process.env.NODE_ENV!, process.cwd()) }
 const mainPlugins = [
@@ -15,6 +35,7 @@ const mainPlugins = [
       '@geekgeekrun/launch-bosszhipin-login-page-with-preload-extension'
     ]
   }),
+  copyStorageFilesPlugin(),
   Replace({
     delimiters: ['', ''],
     sourcemap: true,

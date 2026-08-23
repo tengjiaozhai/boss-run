@@ -5,6 +5,9 @@
       <a href="javascript:void(0)" @click="handleClickConfigCommonJobCondition">
         公共职位筛选条件
       </a>
+      <a href="javascript:void(0)" @click="handleClickEditResume">
+        简历编辑
+      </a>
       <a href="javascript:void(0)" @click="handleClickBrowserSetting">
         编辑浏览器偏好<TopRight w-1em h-1em mr10px />
       </a>
@@ -34,7 +37,7 @@
                   style="background-color: #462ac4"
                   >Qwen2.5</span
                 >
-                模型<br />支持多个“服务商-模型”组合按权重搭配使用
+                模型<br />支持多个"服务商-模型"组合按权重搭配使用
               </div>
             </template>
             <QuestionFilled w-1em h-1em mr10px />
@@ -77,6 +80,14 @@ const handleClickConfigCommonJobCondition = async () => {
   gtagRenderer('config_cjc_clicked', { entry: 'left-nav' })
   try {
     await electron.ipcRenderer.invoke('common-job-condition-config')
+  } catch (err) {
+    console.log(err)
+  }
+}
+
+const handleClickEditResume = async () => {
+  try {
+    await electron.ipcRenderer.invoke('resume-edit')
   } catch (err) {
     console.log(err)
   }

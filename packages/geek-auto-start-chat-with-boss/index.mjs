@@ -19,9 +19,9 @@ import {
   checkAnyCombineBossRecommendFilterHasCondition,
   formatStaticCombineFilters,
 } from './combineCalculator.mjs'
-import { default as jobFilterConditions } from './internal-config/job-filter-conditions-20241002.json'
-import { default as rawIndustryFilterExemption } from './internal-config/job-filter-industry-filter-exemption-20241002.json'
-import { ChatStartupFrom } from '@geekgeekrun/sqlite-plugin/dist/entity/ChatStartupLog'
+import { default as jobFilterConditions } from './internal-config/job-filter-conditions-20241002.json' with {type: 'json'}
+import { default as rawIndustryFilterExemption } from './internal-config/job-filter-industry-filter-exemption-20241002.json' with {type: 'json'}
+import { ChatStartupFrom } from '@geekgeekrun/sqlite-plugin/dist/entity/ChatStartupLog.js'
 import {
   MarkAsNotSuitReason,
   MarkAsNotSuitOp,
@@ -30,14 +30,14 @@ import {
   JobDetailRegExpMatchLogic,
   JobSource,
   CombineRecommendJobFilterType
-} from '@geekgeekrun/sqlite-plugin/dist/enums'
+} from '@geekgeekrun/sqlite-plugin/dist/enums.js'
 import {
   activeDescList,
   RECOMMEND_JOB_ENTRY_SELECTOR,
   USER_SET_EXPECT_JOB_ENTRIES_SELECTOR,
   SEARCH_BOX_SELECTOR,
 } from './constant.mjs'
-import { parseSalary } from "@geekgeekrun/sqlite-plugin/dist/utils/parser"
+import { parseSalary } from "@geekgeekrun/sqlite-plugin/dist/utils/parser.js"
 import { waitForSageTimeOrJustContinue } from './sage-time.mjs'
 import cityGroupData from './cityGroup.mjs'
 import { hasIntersection } from '@geekgeekrun/utils/number.mjs';
@@ -1409,6 +1409,24 @@ async function toRecommendPage (hooks) {
                         } catch(err) {
                           console.log(`mark job salary not suit failed`, err)
                         }
+                      }
+                    },
+                    async aiMatch() {
+                      blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
+                      try {
+                        await hooks.jobMarkedAsNotSuit.promise(
+                          targetJobData,
+                          {
+                            markFrom: ChatStartupFrom.AutoFromRecommendList,
+                            markReason: MarkAsNotSuitReason.JOB_NOT_SUIT,
+                            extInfo: {
+                              reason: 'AI_MATCH_SCORE_BELOW_THRESHOLD'
+                            },
+                            markOp: MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL,
+                            jobSource: JobSource[computedSourceList[currentSourceIndex]?.type]
+                          }
+                        )
+                      } catch {
                       }
                     }
                   }
