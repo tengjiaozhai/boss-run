@@ -11,6 +11,7 @@ import defaultDingtalkConf from './default-config-file/dingtalk.json' with {type
 import defaultBossConf from './default-config-file/boss.json' with {type: 'json'}
 import defaultTargetCompanyListConf from './default-config-file/target-company-list.json' with {type: 'json'}
 import defaultLlmConf from './default-config-file/llm.json' with { type: 'json' }
+import defaultResumesConf from './default-config-file/resumes.json' with { type: 'json' }
 
 import defaultBossCookieStorage from './default-storage-file/boss-cookies.json' with { type: 'json' }
 import defaultBossLocalStorageStorage from './default-storage-file/boss-local-storage.json' with { type: 'json' }
@@ -20,14 +21,15 @@ const defaultMatchReportTemplate = fs.readFileSync(
   'utf-8'
 )
 import defaultCommonJobConditionConfig from './default-config-file/common-job-condition-config.json' with { type: 'json' }
-export const configFileNameList = ['boss.json', 'dingtalk.json', 'target-company-list.json', 'llm.json', 'common-job-condition-config.json']
+export const configFileNameList = ['boss.json', 'dingtalk.json', 'target-company-list.json', 'llm.json', 'common-job-condition-config.json', 'resumes.json']
 
 const defaultConfigFileContentMap = {
   'boss.json': JSON.stringify(defaultBossConf),
   'dingtalk.json': JSON.stringify(defaultDingtalkConf),
   'target-company-list.json': JSON.stringify(defaultTargetCompanyListConf),
   'llm.json': JSON.stringify(defaultLlmConf),
-  'common-job-condition-config.json': JSON.stringify(defaultCommonJobConditionConfig)
+  'common-job-condition-config.json': JSON.stringify(defaultCommonJobConditionConfig),
+  'resumes.json': JSON.stringify(defaultResumesConf)
 }
 const runtimeFolderPath = path.join(os.homedir(), '.geekgeekrun')
 export const configFolderPath = path.join(

@@ -180,17 +180,34 @@ const payloadHandler = {
     }
 
     const matchReportRepository = dataSource!.getRepository(MatchReport)!
-    const [data, totalItemCount] = await measureExecutionTime(
-      matchReportRepository.findAndCount({
-        skip: (pageNo - 1) * pageSize,
-        take: pageSize,
-        order: {
-          date: 'DESC'
-        }
-      })
+    const result = await measureExecutionTime(
+      matchReportRepository
+        .createQueryBuilder('matchReport')
+        .leftJoin('job_info', 'jobInfo', 'matchReport.encryptJobId = jobInfo.encryptJobId')
+        .addSelect(['jobInfo.jobName', 'jobInfo.salaryLow', 'jobInfo.salaryHigh', 'jobInfo.salaryMonth'])
+        .orderBy('matchReport.date', 'DESC')
+        .skip((pageNo - 1) * pageSize)
+        .take(pageSize)
+        .getRawAndEntities()
     )
+    
+    // 合并 matchReport 和 jobInfo 数据
+    const mergedData = result.entities.map((entity: any, index: number) => {
+      const raw = result.raw[index]
+      return {
+        ...entity,
+        jobName: raw.jobInfo_jobName,
+        salaryLow: raw.jobInfo_salaryLow,
+        salaryHigh: raw.jobInfo_salaryHigh,
+        salaryMonth: raw.jobInfo_salaryMonth
+      }
+    })
+    
+    // 获取总数
+    const totalItemCount = await matchReportRepository.count()
+    
     return {
-      data,
+      data: mergedData,
       pageNo,
       totalItemCount
     }

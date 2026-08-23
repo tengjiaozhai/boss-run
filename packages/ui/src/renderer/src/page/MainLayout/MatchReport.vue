@@ -11,7 +11,16 @@
           table-layout="auto"
           highlight-current-row
         >
-          <ElTableColumn prop="encryptJobId" label="职位ID" :width="160" />
+          <ElTableColumn label="岗位信息" min-width="200">
+            <template #default="{ row }">
+              <div class="job-info">
+                <div class="job-name">{{ row.jobName || '未知职位' }}</div>
+                <div class="job-salary">
+                  {{ row.salaryLow && row.salaryHigh ? `${row.salaryLow}-${row.salaryHigh}K${row.salaryMonth ? `·${row.salaryMonth}薪` : ''}` : '薪资面议' }}
+                </div>
+              </div>
+            </template>
+          </ElTableColumn>
           <ElTableColumn label="匹配分数" :width="120">
             <template #default="{ row }">
               <ElTag
@@ -43,7 +52,7 @@
                 type="primary"
                 size="small"
                 @click="handleViewJobOnlineButtonClick(row.encryptJobId)"
-                >线上</ElButton
+                >岗位链接</ElButton
               >
             </template>
           </ElTableColumn>
@@ -106,6 +115,10 @@ interface MatchReportRow {
   report: string | null
   jobSource: number | null
   autoStartupChatRecordId: number | null
+  jobName?: string
+  salaryLow?: number
+  salaryHigh?: number
+  salaryMonth?: number
 }
 
 const tableData = ref<MatchReportRow[]>([])
@@ -213,6 +226,20 @@ function formatDate(dateStr: string) {
       font-size: 14px;
       line-height: 1.6;
     }
+  }
+}
+.job-info {
+  .job-name {
+    font-weight: 500;
+    color: #303133;
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .job-salary {
+    font-size: 12px;
+    color: #909399;
   }
 }
 </style>
