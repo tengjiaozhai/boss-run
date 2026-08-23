@@ -1,0 +1,185 @@
+/* GeekGeekRun 架构课共享样式 —— 所有 lesson 与 reference 统一引用 */
+:root {
+  --ink: #1a1a1a;
+  --ink-soft: #555;
+  --paper: #fffdf9;
+  --accent: #8a2c2c;
+  --accent-soft: #f6e8e8;
+  --code-bg: #f4f2ee;
+  --ok: #2e6b34;
+  --ok-bg: #eaf3eb;
+  --bad: #a03030;
+  --bad-bg: #f9ecec;
+  --rule: #d8d4cc;
+}
+
+* { box-sizing: border-box; }
+
+html { font-size: 17px; }
+
+body {
+  margin: 0;
+  padding: 2rem 1.25rem 5rem;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", Georgia, "Times New Roman", serif;
+  line-height: 1.8;
+}
+
+main { max-width: 46rem; margin: 0 auto; }
+
+h1, h2, h3 {
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+}
+
+h1 {
+  font-size: 1.7rem;
+  margin: 0 0 0.4rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 2px solid var(--rule);
+}
+
+h2 {
+  font-size: 1.28rem;
+  margin-top: 2.6rem;
+  padding-left: 0.65rem;
+  border-left: 4px solid var(--accent);
+}
+
+h3 { font-size: 1.08rem; margin-top: 1.8rem; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
+.lesson-meta { color: var(--ink-soft); font-size: 0.9rem; margin-bottom: 2rem; }
+.lesson-meta .num { font-variant: small-caps; letter-spacing: 0.08em; }
+
+.goal {
+  background: var(--accent-soft);
+  border: 1px solid #e3cfcf;
+  border-radius: 6px;
+  padding: 0.9rem 1.1rem;
+  margin: 1.6rem 0;
+  font-size: 0.97rem;
+}
+
+code, pre {
+  font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.86em;
+}
+
+code {
+  background: var(--code-bg);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  line-height: 1.55;
+}
+
+pre code { background: none; padding: 0; font-size: 0.84rem; }
+
+.src {
+  display: block;
+  text-align: right;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+}
+
+.sidenote {
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  border-left: 3px solid var(--rule);
+  padding-left: 0.9rem;
+  margin: 1.2rem 0;
+}
+
+table { border-collapse: collapse; width: 100%; margin: 1.2rem 0; font-size: 0.92rem; }
+th, td { border: 1px solid var(--rule); padding: 0.45rem 0.7rem; text-align: left; vertical-align: top; }
+th { background: var(--code-bg); font-weight: 600; }
+
+/* ---- 测验组件（配合 assets/quiz.js） ---- */
+.quiz {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 1rem 1.2rem 1.2rem;
+  margin: 1.6rem 0;
+  background: #fff;
+}
+
+.quiz .quiz-q { font-weight: 600; margin: 0 0 0.7rem; }
+.quiz .quiz-q::before { content: "问 "; color: var(--accent); }
+
+.quiz-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  padding: 0.5rem 0.8rem;
+  margin: 0.45rem 0;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.quiz-option:hover:not(:disabled) { border-color: var(--accent); }
+.quiz-option:disabled { cursor: default; opacity: 0.92; }
+.quiz-option.correct { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); font-weight: 600; }
+.quiz-option.wrong { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
+
+.quiz-explain {
+  display: none;
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px dashed var(--rule);
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+.quiz.done .quiz-explain { display: block; }
+
+/* ---- 实战任务清单 ---- */
+.task {
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  padding: 0.9rem 1.2rem;
+  margin: 1.6rem 0;
+}
+.task > .task-title { font-weight: 600; color: var(--accent); margin-bottom: 0.4rem; }
+.task ol { margin: 0.4rem 0 0; padding-left: 1.3rem; }
+
+details { margin: 1rem 0; }
+details summary { cursor: pointer; color: var(--accent); font-size: 0.93rem; }
+details .answer {
+  margin-top: 0.6rem;
+  padding: 0.7rem 1rem;
+  background: var(--ok-bg);
+  border-radius: 6px;
+  font-size: 0.92rem;
+}
+
+footer {
+  margin-top: 4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+@media print {
+  body { padding: 0; background: #fff; font-size: 11pt; }
+  .quiz-option { border: none; padding: 0.1rem 0; }
+  .quiz-explain { display: block; }
+  a { color: inherit; }
+  pre { border: none; }
+}

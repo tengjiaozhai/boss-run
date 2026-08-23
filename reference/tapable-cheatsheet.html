@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tapable 速查表 · GeekGeekRun 架构课</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+<h1>tapable 速查表</h1>
+<p class="lesson-meta">参考文档 · 长期复习用 · 依据 <a href="https://github.com/webpack/tapable">官方 README</a> 整理 · 本项目版本 tapable@2.2.1</p>
+
+<h2>类名怎么读</h2>
+<p>每个 Hook 类名由三段信息拼成，读懂三段就读懂全部 10 种：</p>
+<table>
+  <tr><th>段</th><th>取值</th><th>含义</th></tr>
+  <tr><td>① 执行模型</td><td><code>Sync</code> / <code>Async</code></td><td>Sync 钩子只能用 <code>tap</code> 注册同步函数；Async 钩子三种注册方式都接受</td></tr>
+  <tr><td>② 并发方式（仅 Async 有）</td><td><code>Parallel</code> / <code>Series</code></td><td>Parallel 同时启动全部回调；Series 按注册顺序逐个 <code>await</code></td></tr>
+  <tr><td>③ 返回值语义</td><td>无 / <code>Bail</code> / <code>Waterfall</code> / <code>Loop</code></td><td>无＝忽略返回值；Bail＝返回非 <code>undefined</code> 即停止后续；Waterfall＝返回值传给下一个；Loop＝返回非 <code>undefined</code> 则从头再跑</td></tr>
+</table>
+
+<h2>10 种 Hook 一览</h2>
+<table>
+  <tr><th>类名</th><th>注册</th><th>触发</th><th>一句话语义</th></tr>
+  <tr><td><code>SyncHook</code> ★</td><td><code>tap</code></td><td><code>call</code></td><td>同步依次调用，忽略返回值</td></tr>
+  <tr><td><code>SyncBailHook</code></td><td><code>tap</code></td><td><code>call</code></td><td>同步依次调用，谁返回非 <code>undefined</code> 就短路</td></tr>
+  <tr><td><code>SyncWaterfallHook</code></td><td><code>tap</code></td><td><code>call</code></td><td>同步链式，上家返回值是下家入参</td></tr>
+  <tr><td><code>SyncLoopHook</code></td><td><code>tap</code></td><td><code>call</code></td><td>返回非 <code>undefined</code> 则该回调重跑</td></tr>
+  <tr><td><code>AsyncParallelHook</code></td><td><code>tap / tapAsync / tapPromise</code></td><td><code>call / callAsync / promise</code></td><td>全部并发启动，等齐</td></tr>
+  <tr><td><code>AsyncParallelBailHook</code></td><td>同上</td><td>同上</td><td>并发，任一返回非 <code>undefined</code> 即收尾</td></tr>
+  <tr><td><code>AsyncSeriesHook</code> ★</td><td>同上</td><td>同上</td><td>按注册顺序串行，逐个等待</td></tr>
+  <tr><td><code>AsyncSeriesBailHook</code></td><td>同上</td><td>同上</td><td>串行 + 短路</td></tr>
+  <tr><td><code>AsyncSeriesWaterfallHook</code></td><td>同上</td><td>同上</td><td>串行 + 返回值下传</td></tr>
+  <tr><td><code>AsyncSeriesLoopHook</code></td><td>同上</td><td>同上</td><td>串行 + 循环重跑</td></tr>
+</table>
+<p class="sidenote">★ ＝本项目实际使用的两种。<code>AsyncSeriesHook</code> 是本项目绝对主力（持久化、通知都在上面），因为落库必须等前一个插件写完再写下一个，串行即正确顺序。</p>
+
+<h2>注册方法三兄弟（Async 钩子通用）</h2>
+<table>
+  <tr><th>方法</th><th>回调形态</th><th>适用</th></tr>
+  <tr><td><code>tap(name, fn)</code></td><td>同步函数</td><td>逻辑简单、无 IO</td></tr>
+  <tr><td><code>tapAsync(name, (args…, cb) =&gt; {})</code></td><td>Node 风格回调，最后一个参数是 <code>cb(err)</code></td><td>回调风格的老库</td></tr>
+  <tr><td><code>tapPromise(name, asyncFn)</code></td><td>返回 Promise / async 函数</td><td>现代 async/await 首选 ★本项目用这种</td></tr>
+</table>
+
+<h2>触发方法三兄弟</h2>
+<table>
+  <tr><th>方法</th><th>行为</th><th>本项目用法</th></tr>
+  <tr><td><code>call(…args)</code></td><td>同步触发，立即执行完所有回调</td><td>SyncHook 用（如 <code>errorEncounter</code>）</td></tr>
+  <tr><td><code>callAsync(…args, cb)</code></td><td>异步触发，全部完成后回调 <code>cb</code></td><td>未使用</td></tr>
+  <tr><td><code>promise(…args)</code></td><td>返回 Promise，<code>await</code> 即等全部回调完成</td><td>AsyncSeriesHook 全用这种 ★</td></tr>
+</table>
+
+<h2>三条容易踩的坑</h2>
+<ol>
+  <li><strong>构造参数是参数名数组，不是默认值</strong>：<code>new AsyncSeriesHook(['jobInfo', 'matchResult'])</code> 两个字符串只用于文档与报错提示（v2 亦作类型检查依据），不传实参。</li>
+  <li><strong>Sync 钩子不能 <code>tapPromise</code></strong>：会直接抛错。注册方式必须与钩子类型匹配。</li>
+  <li><strong>回调抛错会中断整个触发</strong>：<code>promise()</code> 会 reject，因此核心触发处常用 try/catch 包裹（见 <code>geek-auto-start-chat-with-boss/index.mjs:1482-1494</code>）。</li>
+</ol>
+
+<footer>
+  <p>GeekGeekRun 架构课参考文档 · <a href="../lessons/0001-tapable-plugin-architecture.html">← 第 1 课：tapable 插件架构</a> · 权威来源：<a href="https://github.com/webpack/tapable">webpack/tapable README</a></p>
+</footer>
+</main>
+</body>
+</html>

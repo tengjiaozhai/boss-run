@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第 2 课 · 数据获取的三个层次 · GeekGeekRun 架构课</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+<h1>第 2 课 · 数据获取的三个层次：让网站自己把数据送上门</h1>
+<p class="lesson-meta"><span class="num">Lesson 0002</span> · 预计 25 分钟 · 前置：<a href="0001-tapable-plugin-architecture.html">第 1 课 插件架构</a> · 配套速查：<a href="../reference/puppeteer-data-cheatsheet.html">Puppeteer 数据获取速查表</a></p>
+
+<div class="goal">
+<b>本课目标</b>：理解这个项目所有业务数据（职位列表、详情、开聊结果）没有一行来自 HTML 解析的秘诀——网络层、框架层、DOM 层各管什么、怎么配合。看完后你能为一个陌生的 SPA 网站设计出同样的取数方案，并说清哪层最耐久、哪层最脆弱。
+</div>
+
+<h2>1. 总览：一个"手眼分工"的原则</h2>
+<p>自动化脚本要跟网页打交道的事情只有两类：<strong>操作</strong>（点击、滚动、输入）和<strong>取数</strong>（职位列表、详情、结果）。本项目的原则是：</p>
+<pre><code>操作 → 落在 DOM 层（那是"手"，模拟人去点）
+取数 → 优先网络层，其次框架层（那是"眼"，听和看，不拆 HTML）</code></pre>
+<p>于是形成三层金字塔，越往上保真度越高、越耐改版：</p>
+<table>
+  <tr><th>层次</th><th>原理</th><th>耐久性</th><th>本项目取到的数据</th></tr>
+  <tr><td>① 网络层</td><td>监听浏览器发出的 XHR 的响应</td><td>最高（API 不轻易变）</td><td>职位详情 JSON、开聊结果、用户信息</td></tr>
+  <tr><td>② 框架层</td><td>直读页面 Vue 实例的内存状态</td><td>中（依赖框架实现）</td><td>职位列表、是否还有更多页、当前选中职位</td></tr>
+  <tr><td>③ DOM 层</td><td>选择器 + 文本</td><td>最低（改版即碎）</td><td>仅按钮文字确认（"立即沟通"）</td></tr>
+</table>
+
+<h2>2. 网络层的三种姿势</h2>
+
+<h3>姿势 A · 长期旁听：插件自己收数据</h3>
+<p>第 1 课埋的伏笔在这：SqlitePlugin 落库的数据从哪来？答案它自己听来的（<code>packages/sqlite-plugin/src/index.ts:103-121</code>）：</p>
+<pre><code>hooks.pageGotten.tap('SqlitePlugin', (page) =&gt; {
+  page.on('response', async (response) =&gt; {          // 旁听所有响应
+    if (response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/job/detail.json')) {
+      const data = await response.json()               // 服务端原始 JSON
+      if (data.code === 0) {
+        await saveJobInfoFromRecommendPage(ds, data.zpData)  // 直接入库
+      }
+    }
+  })
+})</code></pre>
+<p>核心库只负责"像人一样点开职位卡片"，BOSS 自己会请求详情 API——插件在网络层顺手截胡。核心库与数据采集互不知晓，这是插件架构真正跑通的关键。</p>
+
+<h3>姿势 B · 一次性等待：点击后等这个 API</h3>
+<p>点击职位卡片后怎么知道详情加载完了？等那个 API 出现（<code>geek-auto-start-chat-with-boss/index.mjs:1138-1148</code>）：</p>
+<pre><code>await targetJobElProxy.click()
+await page.waitForResponse(response =&gt;
+  response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/job/detail.json')
+)</code></pre>
+<p class="sidenote">顺序铁律：先注册等待，再点击。<code>waitForResponse</code> 只能看到注册之后发生的响应。开聊结果的确认同款（<code>index.mjs:1571-1581</code>，等 <code>friend/add.json</code> 且 URL 里带本职位 jobId）。</p>
+
+<h3>姿势 C · 请求-响应对象配对：最精巧的一处</h3>
+<p>滚动加载下一页时有个难题：滚到底触发的是<strong>下一次</strong>翻页请求，怎么确认"新数据到了"而不是误把旧响应当新的？URL 会一模一样，按 URL 判断不可靠（<code>index.mjs:909-938</code>）：</p>
+<pre><code>page.on('request', function reqHandler (request) {
+  if (request.url().startsWith('.../recommend/job/list.json') ||
+      request.url().startsWith('.../search/joblist.json')) {
+    requestNextPagePromiseWithResolver = …           // 用这个请求对象建一个 promise
+    page.off(reqHandler)                              // 立即注销自己
+    page.on('response', function resHandler (response) {
+      if (response.request() === request) {           // ★ 对象同一性配对
+        requestNextPagePromiseWithResolver?.resolve()
+        page.off(resHandler)
+      }
+    })
+  }
+})</code></pre>
+<p><code>response.request() === request</code>——不比较 URL、不比较时间戳，直接比较<strong>对象是不是同一个</strong>。Puppeteer 中每个 Request 对象与其派生的 Response 一一关联，对象同一性就是最精确的配对。消费端在滚动循环里（<code>index.mjs:1088-1102</code>）：</p>
+<pre><code>while (!requestNextPagePromiseWithResolver &amp;&amp; !hasReachLastPage) {
+  scrolledHeight += increase                            // 步长 40~70 随机
+  await page.mouse.wheel({ deltaY: increase })          // 真滚轮事件
+  await sleep(100)
+  await requestNextPagePromiseWithResolver?.promise     // 捕获到翻页请求就等它
+  hasReachLastPage = await page.evaluate(`
+    !(document.querySelector('.page-jobs-main')?.__vue__?.hasMore)`)
+}</code></pre>
+
+<h2>3. 框架层：直接翻 Vue 的抽屉</h2>
+<p>BOSS 直聘网页是 Vue 2 写的，Vue 实例会挂在 DOM 元素上（<code>el.__vue__</code>）。本项目四处直读（全部在 <code>index.mjs</code>）：</p>
+<table>
+  <tr><th>位置</th><th>表达式</th><th>拿到什么</th></tr>
+  <tr><td><code>:952</code></td><td><code>.page-jobs-main?.__vue__?.jobList</code></td><td>整页职位列表（结构化对象数组）</td></tr>
+  <tr><td><code>:1097</code></td><td><code>…__vue__?.hasMore</code></td><td>还有没有下一页（决定是否停止滚动）</td></tr>
+  <tr><td><code>:1155</code></td><td><code>.job-detail-box.__vue__.data</code></td><td>右侧详情面板的完整数据（jobInfo/bossInfo/brandComInfo）</td></tr>
+  <tr><td><code>:1156</code></td><td><code>.page-jobs-main.__vue__.currentJob</code></td><td>当前选中的是哪个职位（列表与详情对账用）</td></tr>
+</table>
+<p>为什么巧：这些数据网站<em>本来就请求过了、渲染过了</em>，就存在框架实例的内存里。直读意味着零额外请求（不触发风控）、零解析误差（不是字符串是对象）、零重复计算。代价是<strong>依赖实现细节</strong>——Vue 3 生产构建没有 <code>__vue__</code>，这就是它排在网络层之后的原因。</p>
+<p class="sidenote">你写的 AI 匹配评估吃的 <code>targetJobData</code>（jobInfo/bossInfo/brandComInfo 三段）正是 <code>:1155</code> 那行读出来的——AI 功能的数据源就站在框架层上。</p>
+
+<h2>4. DOM 层：只留给"手"和最简确认</h2>
+<p>全项目对 DOM 文本的读取几乎只剩一处——确认开聊按钮状态（<code>index.mjs:1532-1533</code>）：</p>
+<pre><code>const startChatButtonInnerHTML = await page.evaluate(
+  'document.querySelector(".job-detail-box .op-btn.op-btn-chat")?.innerHTML.trim()')
+if (startChatButtonInnerHTML !== '立即沟通') { /* 已沟通过，跳过 */ }</code></pre>
+<p>其余 DOM 操作全是"手"：点击卡片（<code>:1138</code>）、模拟滚轮（<code>:1093</code>）、<code>scrollIntoView</code> 且 block 随机取 center/end（<code>:1122-1128</code>）——连滚动到位的方式都带随机性，这就是第 1 轮聊过的拟人化思想落在 DOM 层的样子。</p>
+
+<h2>5. 组合拳：一次完整取数的时间线</h2>
+<pre><code>人（脚本）                         网站                        数据落点
+─────────────────────────────────────────────────────────────────────
+滚轮滚动(随机步长) ──────&gt; 触发翻页 XHR job/list.json
+                         request 对象 R 被捕获 ──&gt; 建 promise
+                         响应返回 ──&gt; response.request()===R ──&gt; resolve
+__vue__.hasMore 判断是否到底
+__vue__.jobList 重读列表 ────────────────────────────&gt; 内存 jobListData
+点击目标卡片 ──────&gt; 请求 job/detail.json
+waitForResponse 等到它 ──────────────────────────────&gt; 时机确认
+__vue__.data / __vue__.currentJob 读详情 ───────────&gt; targetJobData
+   （同一响应，SqlitePlugin 的 page.on('response') 旁路 ──&gt; sqlite）
+点击"立即沟通" ──────&gt; 请求 friend/add.json
+waitForResponse(带 jobId) ───────────────────────────&gt; 开聊结果</code></pre>
+
+<h2>6. 检索练习</h2>
+
+<div class="quiz">
+  <p class="quiz-q">翻页确认为什么用 <code>response.request() === request</code> 而不是比较 URL？</p>
+  <button class="quiz-option">因为比较 URL 的运行速度会慢很多</button>
+  <button class="quiz-option" data-correct="true">同一 URL 可能对应多个响应，对象同一性最准</button>
+  <button class="quiz-option">因为 Puppeteer 不支持比较两个 URL</button>
+  <button class="quiz-option">因为响应对象上没有 URL 属性可用</button>
+  <p class="quiz-explain">重试、预取、并发请求都可能让同一 URL 出现多次响应；时间戳判断也只能猜。对象配对是唯一能精确锁定"这一次请求的这一次响应"的办法。</p>
+</div>
+
+<div class="quiz">
+  <p class="quiz-q"><code>page.on('response')</code> 与 <code>page.waitForResponse()</code> 最本质的区别是？</p>
+  <button class="quiz-option">前者同步执行，后者异步执行</button>
+  <button class="quiz-option" data-correct="true">前者持续监听多个，后者一次性等待一个</button>
+  <button class="quiz-option">前者能拿响应体，后者拿不到</button>
+  <button class="quiz-option">前者只对 XHR 有效，后者不限制</button>
+  <p class="quiz-explain">旁听（插件长期落库）用 on；"等某件事发生再继续"（点击后等详情）用 waitForResponse。两者拿到的 Response 对象能力相同。</p>
+</div>
+
+<div class="quiz">
+  <p class="quiz-q">如果 BOSS 直聘把网页重构为 Vue 3 生产构建（不暴露 <code>__vue__</code>），哪层代码失效？</p>
+  <button class="quiz-option">三层全部一起失效</button>
+  <button class="quiz-option">网络层与框架层一起失效</button>
+  <button class="quiz-option" data-correct="true">只有框架层失效，网络层照常</button>
+  <button class="quiz-option">只有 DOM 层失效，其余照常</button>
+  <p class="quiz-explain">__vue__ 是 Vue 2 实例暴露；Vue 3 生产构建没有。但 XHR 照发（网络层不变），类名不改的话点击也照常。这就是三层耐久性排序的意义：数据保真度越高的层，对页面形态变化越不敏感。</p>
+</div>
+
+<div class="quiz">
+  <p class="quiz-q">滚动加载为什么用 <code>page.mouse.wheel()</code> 小步多次，而不是一次 <code>window.scrollTo</code> 跳到底？</p>
+  <button class="quiz-option">scrollTo 在新页面里已被弃用</button>
+  <button class="quiz-option">wheel 的执行速度天然更快</button>
+  <button class="quiz-option">wheel 不需要知道页面高度</button>
+  <button class="quiz-option" data-correct="true">真实滚轮事件轨迹更拟人，利于反检测</button>
+  <p class="quiz-explain">scrollTo 是"瞬移"，没有滚轮事件序列，行为特征与人截然不同；wheel 逐格滚动且步长 40~70px 随机，配合 sage-time 的长间歇，整体行为节奏接近真人。</p>
+</div>
+
+<h2>7. 实战：把三层找全</h2>
+<div class="task">
+  <p class="task-title">打开 <code>packages/geek-auto-start-chat-with-boss/index.mjs</code>：</p>
+  <ol>
+    <li>全文件搜索 <code>__vue__</code>，核对 4 处框架层直读（速查表说有 4 处，验证我有没有漏）。</li>
+    <li>搜索 <code>waitForResponse</code>，找出全部等待点，并回答：哪两处的谓词除了 URL 还匹配了别的条件？</li>
+    <li>思考：职位<strong>列表</strong>数据为什么走框架层（<code>__vue__.jobList</code>）而不是像详情那样在网络层截获列表 API 的响应？（提示：看 <code>:914-915</code> 两条被监听的 URL，想想列表数据什么时候才"可安全读取"。）</li>
+  </ol>
+</div>
+<details>
+  <summary>做完后点开核对答案</summary>
+  <div class="answer">
+    <p>① 4 处：<code>:952</code> jobList、<code>:1097</code> hasMore、<code>:1155</code> 详情 data、<code>:1156</code> currentJob。</p>
+    <p>② 两处 <code>waitForResponse</code>：<code>:1139</code>（点卡片后等 <code>job/detail.json</code>，仅 URL 前缀）与 <code>:1572</code>（开聊后等 <code>friend/add.json</code>，额外要求 URL 含 <code>jobId=${targetJobData.jobInfo.encryptId}</code>——因为聊天页可能同时有别的 add 请求，必须锁定是本职位的那一个，和翻页配对同一思想）。</p>
+    <p>③ 列表 API 响应到达时，Vue 还没把它合并渲染进实例；且翻页是"滚一下发一次"的连续过程，直接消费响应对象要处理乱序。而 <code>__vue__.jobList</code> 是 Vue <em>已经消化完</em>的状态——框架层取的是"渲染后的真相"，天然免同步问题。本项目其实也监听了列表请求（<code>:914</code>），但只用作翻页时机信号，不取其响应体——两种层次各取所长。</p>
+  </div>
+</details>
+
+<h2>8. 主源与下一步</h2>
+<p><strong>推荐主源</strong>：<a href="https://pptr.dev/api/puppeteer.page">pptr.dev · Page API</a>——重点读 <code>waitForResponse</code>、<code>evaluate</code>、<code>on('response')</code> 三个条目，配合本课代码看一半就懂。</p>
+<p><strong>有任何不清楚的，直接问我</strong>——比如"我想给某个网站也做网络层截获，该先打开 DevTools 的哪个面板"，我随时展开。</p>
+<p><strong>下一课预告</strong>：pnpm monorepo 分层——9 个包为什么这样切？谁允许 UI 包直接 import 核心库、却禁止核心库反向依赖？<code>workspace:*</code> 协议背后发生了什么。</p>
+
+<footer>
+  <p>GeekGeekRun 架构课 · <a href="../reference/puppeteer-data-cheatsheet.html">本课速查表</a> · 上一课：<a href="0001-tapable-plugin-architecture.html">tapable 插件架构</a> · 仓库：<code>packages/geek-auto-start-chat-with-boss/index.mjs</code></p>
+</footer>
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

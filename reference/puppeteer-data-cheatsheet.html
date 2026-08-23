@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Puppeteer 数据获取速查表 · GeekGeekRun 架构课</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+<h1>Puppeteer 数据获取速查表</h1>
+<p class="lesson-meta">参考文档 · 长期复习用 · 依据 <a href="https://pptr.dev">pptr.dev 官方文档</a> 与本仓库实战整理</p>
+
+<h2>核心 API 三个层次</h2>
+<table>
+  <tr><th>层次</th><th>API</th><th>语义</th><th>本项目用例</th></tr>
+  <tr><td rowspan="2">网络层</td><td><code>page.on('response', cb)</code></td><td>持续监听所有响应（旁路）</td><td>SqlitePlugin 截获 <code>job/detail.json</code> 落库</td></tr>
+  <tr><td><code>page.waitForResponse(pred)</code></td><td>一次性等待符合条件的响应，返回 Response 对象</td><td>点击职位后等详情 API；开聊后等 <code>friend/add.json</code></td></tr>
+  <tr><td rowspan="2">框架层</td><td><code>page.evaluate(expr)</code> 读 <code>__vue__</code></td><td>在页面上下文里执行表达式，返回可序列化结果</td><td><code>jobList</code> / <code>hasMore</code> / 详情 <code>data</code> / <code>currentJob</code></td></tr>
+  <tr><td><code>page.on('request') + page.off(handler)</code></td><td>捕获请求对象，用完即拆监听</td><td>翻页确认的请求-响应配对</td></tr>
+  <tr><td rowspan="3">DOM 层</td><td><code>page.mouse.wheel({deltaY})</code></td><td>派发真实滚轮事件（非 <code>scrollTo</code> 跳转）</td><td>逐格滚动列表触发懒加载</td></tr>
+  <tr><td><code>elementHandle.click()</code></td><td>对元素句柄点击</td><td>点击职位卡片、开聊按钮</td></tr>
+  <tr><td><code>page.$ / page.$$</code></td><td>查询选择器（单/多）</td><td>检查"立即沟通"按钮、取卡片列表</td></tr>
+</table>
+
+<h2>三层怎么选（决策树）</h2>
+<pre><code>需要什么？
+├─ 网站自己会请求的数据（XHR/API 响应）
+│    └─ 网络层：旁听 page.on('response') 或等待 waitForResponse
+│       （保真度最高：服务端原始 JSON，无渲染损失）
+├─ 页面已渲染出的状态，但网站有前端框架（Vue/React）
+│    └─ 框架层：evaluate 读 __vue__ / 组件内部状态
+│       （次选：数据已是结构化，但依赖框架实现细节）
+└─ 只有视觉呈现、无 API 无框架数据
+     └─ DOM 层：querySelector + 文本解析
+        （下策：改版即碎，仅用于操作点击与最小状态确认）</code></pre>
+
+<h2>两条实战铁律</h2>
+<ol>
+  <li><strong>操作用 DOM，读数不走 DOM</strong>：点击、滚动必须落 DOM（那是"手"）；取数据优先网络层，其次框架层（那是"眼"）。本项目所有业务数据无一来自 HTML 解析。</li>
+  <li><strong>监听用完即拆</strong>：<code>page.off(handler)</code>——本仓库翻页监听每次触发后立即注销自己（<code>geek-auto-start-chat-with-boss/index.mjs:925</code>），否则回调会随翻页次数线性堆积。</li>
+</ol>
+
+<h2>容易踩的坑</h2>
+<ul>
+  <li><code>page.evaluate</code> 的参数必须是<strong>可序列化</strong>的——函数会被序列化后送进页面执行，闭包外部变量拿不到（传参用 <code>evaluate(fn, arg)</code>）。</li>
+  <li><code>waitForResponse(pred)</code> 的谓词从注册那一刻起才生效——先注册再触发操作，顺序反了就永远等不到。本项目点击卡片前先注册（<code>index.mjs:1138-1148</code>）。</li>
+  <li>同一 URL 可能对应多个响应（重试、预取）——要"这一条"响应就做请求-响应对象配对，别按 URL 猜。</li>
+  <li><code>__vue__</code> 是 Vue 2 的实例暴露；Vue 3 生产构建默认没有。框架层直读是<strong>脆弱依赖</strong>，改版/升级即失效，网络层才耐久。</li>
+</ul>
+
+<footer>
+  <p>GeekGeekRun 架构课参考文档 · <a href="../lessons/0002-data-acquisition-three-layers.html">← 第 2 课：数据获取的三个层次</a> · 官方文档：<a href="https://pptr.dev">pptr.dev</a></p>
+</footer>
+</main>
+</body>
+</html>

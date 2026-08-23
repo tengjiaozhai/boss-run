@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第 1 课 · 插件架构与 tapable · GeekGeekRun 架构课</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+<h1>第 1 课 · 插件架构与 tapable：核心库如何做到"不认识"它的插件</h1>
+<p class="lesson-meta"><span class="num">Lesson 0001</span> · 预计 20 分钟 · 配套速查：<a href="../reference/tapable-cheatsheet.html">tapable 速查表</a></p>
+
+<div class="goal">
+<b>本课目标</b>：看完后你能回答——这个项目里"自动开聊核心流程"和"落库/钉钉通知"是谁也不依赖谁的两个模块，它们靠什么协作？以及：让你手写一个带插件系统的核心库，你的第一行代码该写什么？
+</div>
+
+<h2>1. 先看一个奇怪的依赖方向</h2>
+<p>打开核心库的 <code>package.json</code>（<code>packages/geek-auto-start-chat-with-boss/package.json</code>），它的依赖里<em>没有</em> sqlite-plugin，也没有 dingtalk-plugin——虽然主流程运行中明明在往数据库写开聊记录、在发钉钉通知。</p>
+<p>反过来，<code>packages/sqlite-plugin</code> 和 <code>packages/dingtalk-plugin</code> 也不 import 核心库。</p>
+<p>两边互不认识，事情却发生了。这不是巧合，是本课的主角：<strong>控制反转（IoC）+ 事件钩子（hooks）</strong>。依赖方向不是"核心 → 插件"，而是"组装者 → 双方"：</p>
+<pre><code>组装者 run-core/main.mjs
+ ├─ import 核心库 mainLoop ──── 传入 hooks
+ └─ import 插件 apply(hooks) ── 挂上回调</code></pre>
+<p class="sidenote">为什么要费这个劲？想象两条运行形态：无 GUI 的 <code>pnpm start</code>（run-core 组装）和 Electron 桌面版（UI 包组装，另加截图等插件）。核心库写死任何一个插件，另一种形态就带上了用不上的依赖——插件化让"同一核心、多种组装"成为一行配置的事。</p>
+
+<h2>2. 三种角色与真实代码</h2>
+
+<h3>角色 A · 定义方：组装者声明 18 个钩子</h3>
+<p><code>packages/run-core-of-geek-auto-start-chat-with-boss/main.mjs:48-67</code>（节选）：</p>
+<pre><code>const hooks = {
+  puppeteerLaunched:   new SyncHook(['browser']),      // 同步：拿到浏览器实例
+  pageGotten:          new SyncHook(['page']),         // 同步：拿到页面
+  userInfoResponse:    new AsyncSeriesHook(['userInfo']),
+  newChatStartup:      new AsyncSeriesHook(['positionInfoDetail', 'chatRunningContext']),
+  jobMarkedAsNotSuit:  new AsyncSeriesHook(['jobInfo', 'markContext']),
+  matchReportGenerated: new AsyncSeriesHook(['jobInfo', 'matchResult']),  // ← 你写的 AI 匹配就挂这
+  errorEncounter:      new SyncHook(['errorInfo']),
+  // …共 18 个：11 个 AsyncSeriesHook + 7 个 SyncHook
+}
+initPlugins(hooks)                        // ← 先让插件挂载
+await hooks.daemonInitialized.promise()   // ← 再等"初始化完成"广播</code></pre>
+<p>两个要点：<strong>构造参数是参数名数组</strong>（<code>['jobInfo', 'matchResult']</code>），纯粹为了文档和报错可读，不是默认值；类型选 <code>AsyncSeriesHook</code> 是因为落库这类回调必须<strong>按注册顺序串行</strong>跑完。</p>
+
+<h3>角色 B · 消费方：插件把自己挂上去</h3>
+<p>Webpack 立下的惯例：插件是一个带 <code>apply(hooks)</code> 方法的类。本项目完整复刻。<code>packages/sqlite-plugin/src/index.ts:102</code> 与 <code>244</code>：</p>
+<pre><code>export default class SqlitePlugin {
+  constructor(dbFilePath) {
+    this.initPromise = initDb(dbFilePath)   // 构造即启动异步建库，不 await
+  }
+  apply(hooks) {
+    hooks.jobMarkedAsNotSuit.tapPromise('SqlitePlugin',
+      async (_jobInfo, { markReason, markOp, jobSource } = {}) =&gt; {
+        const ds = await this.initPromise          // 回调里才等库就绪
+        return await saveMarkAsNotSuitRecord(ds, _jobInfo, /* … */)
+      })
+    hooks.matchReportGenerated.tapPromise('SqlitePlugin',
+      async (_jobInfo, matchResult) =&gt; {
+        const ds = await this.initPromise
+        return await saveMatchReport(ds, _jobInfo, this.userInfo, matchResult)
+      })
+  }
+}</code></pre>
+<p>钉钉插件则是另一种姿态——自管可用性，不可用就优雅降级（<code>packages/dingtalk-plugin/index.mjs:49-56</code>）：</p>
+<pre><code>apply(hooks) {
+  if (!this.dingtalkAccessToken) {
+    console.log('[DingtalkPlugin] AccessToken is empty, plugin won\'t do anything.')
+    return                                   // 不挂任何钩子，核心照常运行
+  }
+  hooks.newChatStartup.tap('DingtalkPlugin', ({ jobInfo, bossInfo }) =&gt; {
+    collectedMessageList.push(createTextMessage(/* … */))  // 只入队，定时批量发
+  })
+}</code></pre>
+
+<h3>角色 C · 触发方：核心库在关键时刻"广播"</h3>
+<p>核心库 <code>packages/geek-auto-start-chat-with-boss/index.mjs:1599</code>（开聊成功后）：</p>
+<pre><code>await hooks.newChatStartup?.promise(targetJobData, {
+  chatStartupFrom: ChatStartupFrom.AutoFromRecommendList,
+  jobSource: JobSource[computedSourceList[currentSourceIndex]?.type]
+})</code></pre>
+<p>注意 <code>hooks</code> 是 <code>mainLoop(hooks)</code> 传进来的参数——核心库从头到尾不知道谁在听、有几个在听、甚至有没有人在听。<code>await …promise()</code> 这一行就是在说："各位插件，开聊成功了，你们要记的记、要发的发，我等你们办完再走。"</p>
+
+<h2>3. 一图总结数据流</h2>
+<pre><code>组装者 main.mjs ──定义──&gt; hooks 对象 ──传入──&gt; 核心库 mainLoop(hooks)
+      │                              │
+      └─ apply(hooks) ──&gt; SqlitePlugin / DingtalkPlugin 挂回调
+                                     │
+核心循环运行中: await hooks.newChatStartup.promise(职位数据, 上下文)
+      ├─(串行1) SqlitePlugin:  写 sqlite 开聊记录
+      └─(串行2) DingtalkPlugin: 消息入队, 2 分钟后批量推钉钉</code></pre>
+
+<h2>4. 四个值得偷师的细节</h2>
+<ol>
+  <li><strong><code>apply(hooks)</code> 惯例</strong>：来自 Webpack 的 <code>plugin.apply(compiler)</code>。一个动词明确了挂载时机——组装者控制插件何时上线，插件控制自己监听什么。</li>
+  <li><strong><code>hooks.matchReportGenerated?.promise()</code> 的可选链</strong>（<code>index.mjs:1484</code>）：AI 匹配是后加的新钩子，老调用方可能还传着没有这个字段的旧 hooks 对象。一个 <code>?.</code> 让核心库对新旧组装者都兼容——<em>演进中的公共 API 该有的样子</em>。</li>
+  <li><strong>同一钩子可被同一插件 tap 两次</strong>（<code>sqlite-plugin/src/index.ts:221-233</code>：<code>jobDetailIsGetFromRecommendList</code> 连挂两个 <code>tapPromise</code>，一个存职位、一个记在招状态）。钩子是"多播广播"，不是"单播委托"。</li>
+  <li><strong><code>initPromise</code> 模式</strong>：构造函数里启动异步初始化但不 await，每个回调里 <code>await this.initPromise</code> 再用——初始化一次、处处等待，插件挂载瞬间不会被数据库拖住。</li>
+</ol>
+
+<h2>5. 检索练习</h2>
+<p>别翻回上文，凭记忆作答（答错不要紧，错的地方才值得重读）：</p>
+
+<div class="quiz">
+  <p class="quiz-q">组装者里 <code>new DingtalkPlugin(token).apply(hooks)</code> 这一行，扮演的角色是？</p>
+  <button class="quiz-option">定义方：声明钩子</button>
+  <button class="quiz-option" data-correct="true">消费方：挂载回调</button>
+  <button class="quiz-option">触发方：广播事件</button>
+  <button class="quiz-option">被调方：执行业务</button>
+  <p class="quiz-explain">定义在 48-67 行已完成，这一行是把插件挂上去——消费方。触发方在核心库里。</p>
+</div>
+
+<div class="quiz">
+  <p class="quiz-q">给 <code>AsyncSeriesHook</code> 注册一个 async 函数，该用哪个方法？</p>
+  <button class="quiz-option">tap</button>
+  <button class="quiz-option" data-correct="true">tapPromise</button>
+  <button class="quiz-option">callAsync</button>
+  <button class="quiz-option">promise</button>
+  <p class="quiz-explain">tapPromise 注册 Promise 风格回调；promise() 是触发方法——注册用 tap 系，触法用 call 系，别混。tap 只能挂同步函数（AsyncSeriesHook 上挂同步函数也可以，但 async 函数必须 tapPromise）。</p>
+</div>
+
+<div class="quiz">
+  <p class="quiz-q">SqlitePlugin 与 DingtalkPlugin 都注册了 <code>newChatStartup</code>，核心 <code>await …promise()</code> 后两者的执行方式是？</p>
+  <button class="quiz-option">并发同时启动，先完成先算</button>
+  <button class="quiz-option" data-correct="true">按注册顺序串行，逐个等待</button>
+  <button class="quiz-option">只执行最后注册的那一个</button>
+  <button class="quiz-option">随机挑一个执行</button>
+  <p class="quiz-explain">Series＝串行：先跑完注册早的（SqlitePlugin 在 initPlugins 中先 apply），await promise() 会等最后一个完成。要是落库允许并发，才考虑 AsyncParallelHook。</p>
+</div>
+
+<div class="quiz">
+  <p class="quiz-q">核心库里写 <code>hooks.matchReportGenerated?.promise(...)</code> 加可选链的原因最可能是？</p>
+  <button class="quiz-option">调用速度可以略微更快</button>
+  <button class="quiz-option">该钩子可能未被调用方定义</button>
+  <button class="quiz-option" data-correct="true">兼容尚未声明新钩子的老组装者</button>
+  <button class="quiz-option">tapable v2 的语法强制要求</button>
+  <p class="quiz-explain">新钩子刚加入时，旧的组装者（别的 fork、旧版 UI）传入的 hooks 对象可能还没有这个字段——?. 让核心库对"没这个钩子"的调用方也安全运行。语法上并不强制。</p>
+</div>
+
+<h2>6. 实战：去真实代码里走一遍</h2>
+<div class="task">
+  <p class="task-title">在仓库里完成三件事（用编辑器打开，别靠记忆）：</p>
+  <ol>
+    <li>打开 <code>packages/run-core-of-geek-auto-start-chat-with-boss/main.mjs</code>，数出 18 个钩子里 <code>SyncHook</code> 和 <code>AsyncSeriesHook</code> 各几个，并找出哪个钩子的命名暴露了它就是你最近加的 AI 匹配功能。</li>
+    <li>全仓搜索 <code>matchReportGenerated</code>，列出：谁 tap 它（文件:行）、谁触发它（文件:行）——一共应有两处触发。</li>
+    <li>思考：假如你想"每次点击开聊按钮<strong>之前</strong>"插入自己的逻辑（比如发一条本地通知），应该 tap 哪个钩子？它和 <code>newChatStartup</code> 的区别是什么？</li>
+  </ol>
+</div>
+<details>
+  <summary>做完后点开核对答案</summary>
+  <div class="answer">
+    <p>① 7 个 SyncHook、11 个 AsyncSeriesHook；AI 匹配的钩子是 <code>matchReportGenerated</code>。</p>
+    <p>② tap：<code>packages/sqlite-plugin/src/index.ts:256</code>（tapPromise 存报告）；触发：<code>packages/geek-auto-start-chat-with-boss/index.mjs:1484</code>（评估成功，含 null 结果）与 <code>:1492</code>（评估抛错时也存一条 null 记录）。注意第二处触发包在 try/catch 里——插件回调抛错会让 promise() reject，不能让它打断主流程。</p>
+    <p>③ <code>newChatWillStartup</code>（触发于 <code>index.mjs:1565</code>，在点击按钮之前）。区别：<code>newChatWillStartup</code> 是"将要"开聊（还能在此影响流程），<code>newChatStartup</code> 是"已经"开聊成功（只适合记录与通知）。will/did 命名对是事件系统的常用词汇。</p>
+  </div>
+</details>
+
+<h2>7. 主源与下一步</h2>
+<p><strong>推荐主源</strong>：<a href="https://github.com/webpack/tapable">tapable 官方 README</a>（15 分钟）——通读"Hook types"与"Tap methods"两节即可，其余 6 种钩子类型混个脸熟，随用随查<a href="../reference/tapable-cheatsheet.html">速查表</a>。中文辅材：<a href="https://www.webpackjs.com/api/plugins/">webpack 中文文档 · Plugin API</a>。</p>
+<p><strong>有任何不清楚的，直接问我</strong>（你的 agent 就是这门课的老师）——比如"为什么不用 AsyncParallelHook""Bail 钩子有什么真实场景"，我随时展开。</p>
+<p><strong>下一课预告</strong>：Puppeteer 自动化模式——核心库如何"不解析 HTML 就拿到职位数据"（答案藏在 <code>page.on('response')</code> 网络拦截里，你已在 SqlitePlugin 里见过一次雏形）。</p>
+
+<footer>
+  <p>GeekGeekRun 架构课 · <a href="../reference/tapable-cheatsheet.html">本课速查表</a> · 仓库：<code>packages/run-core-of-geek-auto-start-chat-with-boss/main.mjs</code></p>
+</footer>
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>
