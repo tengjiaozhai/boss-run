@@ -36,19 +36,29 @@ const legacyConfigFolderPath = path.join(
   runtimeFolderPath,
   'config'
 )
+// 本模块可能被 electron-vite 打进 out/main bundle，此时 __dirname 指向 out/main 而非包目录，
+// 依赖构建期注入的 globalThis.__GGR_CONFIG_DIR__（见 electron.vite.config.ts）定位真实 config 目录
+const buildTimeConfigDirPath = typeof globalThis.__GGR_CONFIG_DIR__ === 'string' ? globalThis.__GGR_CONFIG_DIR__ : null
 const projectConfigFolderPath = path.join(
   __dirname,
   'config'
 )
-export const configFolderPath = (() => {
-  try {
-    fs.mkdirSync(projectConfigFolderPath, { recursive: true })
-    return projectConfigFolderPath
-  } catch {
-    // 打包后模块所在目录可能不可写，此时回落到用户目录
-    return legacyConfigFolderPath
+const firstCreatableDirPath = (...dirPathList) => {
+  for (const dirPath of dirPathList) {
+    if (!dirPath) {
+      continue
+    }
+    try {
+      fs.mkdirSync(dirPath, { recursive: true })
+      return dirPath
+    } catch {}
   }
-})()
+  return null
+}
+export const configFolderPath = firstCreatableDirPath(
+  buildTimeConfigDirPath,
+  projectConfigFolderPath
+) ?? legacyConfigFolderPath
 
 function migrateLegacyConfigFiles() {
   if (configFolderPath === legacyConfigFolderPath) {
