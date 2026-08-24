@@ -72,9 +72,7 @@ export const checkUpdateForUi = async (): Promise<NewReleaseInfo | null> => {
       })
   } catch (err) {
     gtag('check_update_error', { err: JSON.stringify(err) })
-    console.log(err)
   }
-  console.log(releaseList)
   const availableRelease = releaseList.find((it) => !it.draft && !it.prerelease)
   if (!availableRelease) {
     return null
@@ -90,7 +88,6 @@ export const checkUpdateForUi = async (): Promise<NewReleaseInfo | null> => {
       currentVersion: packageJson.version,
       newVersion: availableReleaseVersion
     })
-    console.log(targetAsset)
     return {
       releaseVersion: availableReleaseVersion,
       releasePageUrl: availableRelease.html_url,
