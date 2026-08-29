@@ -80,6 +80,11 @@ if (process.env.NODE_ENV) {
 
 export default defineConfig({
   main: {
+    define: {
+      'globalThis.__GGR_CONFIG_DIR__': JSON.stringify(
+        resolve(__dirname, '../geek-auto-start-chat-with-boss/config')
+      )
+    },
     build: {
       rollupOptions: {
         external: []
