@@ -312,6 +312,11 @@ export async function saveMatchReport(
   matchReport.encryptJobId = jobInfo.encryptId;
   matchReport.score = matchResult?.score ?? null;
   matchReport.report = matchResult?.report ?? null;
+  matchReport.skillScore = matchResult?.skillScore ?? null;
+  matchReport.experienceScore = matchResult?.experienceScore ?? null;
+  matchReport.projectScore = matchResult?.projectScore ?? null;
+  matchReport.salaryScore = matchResult?.salaryScore ?? null;
+  matchReport.developmentScore = matchResult?.developmentScore ?? null;
 
   const matchReportRepository = ds.getRepository(MatchReport);
   await matchReportRepository.save(matchReport);

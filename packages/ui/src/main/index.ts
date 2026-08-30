@@ -4,6 +4,12 @@ import { runCommon } from './features/run-common'
 import { launchDaemon } from './flow/OPEN_SETTING_WINDOW/launch-daemon'
 import { app } from 'electron'
 
+// 本机 GPU 进程无法正常启动（虚拟机/远程桌面/驱动兼容问题），禁用硬件加速
+app.disableHardwareAcceleration()
+app.commandLine.appendSwitch('disable-gpu')
+app.commandLine.appendSwitch('disable-gpu-sandbox')
+app.commandLine.appendSwitch('in-process-gpu')
+
 const isUiDev = process.env.NODE_ENV === 'development'
 const enableLogToFile = process.env.GEEKGEEKRUN_ENABLE_LOG_TO_FILE === String(1)
 if (isUiDev || enableLogToFile) {

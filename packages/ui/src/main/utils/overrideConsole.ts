@@ -14,20 +14,21 @@ export default function overrideConsole() {
     fs.mkdirSync(logDirPath, { recursive: true })
   }
 
-  const logFileStream = fs.createWriteStream(path.join(logDirPath, `log.log`), {
-    flags: 'a' // 追加模式
-  })
-  const warnFileStream = fs.createWriteStream(path.join(logDirPath, `warn.log`), {
-    flags: 'a' // 追加模式
-  })
-  const errorFileStream = fs.createWriteStream(path.join(logDirPath, `error.log`), {
-    flags: 'a' // 追加模式
-  })
+  // 使用 appendFileSync 追加日志：写完立即关闭文件句柄，
+  // 避免主进程与守护进程同时以追加模式持有同一文件时在 Windows 上触发 EPERM
+  const appendLog = (filename: string, content: string) => {
+    try {
+      fs.appendFileSync(path.join(logDirPath, filename), content)
+    } catch {
+      // 日志写入失败不影响主流程
+    }
+  }
 
   console.log = (...args: any[]) => {
     const lineHead = `${dayjs().format('YYYY-MM-DD HH:mm:ss.SSS')} [log][PID=${process.pid}]`
     originConsoleLog(lineHead, ...args)
-    logFileStream.write(
+    appendLog(
+      'log.log',
       [
         lineHead,
         args.map((arg) => {
@@ -43,7 +44,8 @@ export default function overrideConsole() {
   console.warn = (...args: any[]) => {
     const lineHead = `${dayjs().format('YYYY-MM-DD HH:mm:ss.SSS')} [warn][PID=${process.pid}]`
     originConsoleWarn(lineHead, ...args)
-    warnFileStream.write(
+    appendLog(
+      'warn.log',
       [
         lineHead,
         args.map((arg) => {
@@ -59,7 +61,8 @@ export default function overrideConsole() {
   console.error = (...args: any[]) => {
     const lineHead = `${dayjs().format('YYYY-MM-DD HH:mm:ss.SSS')} [warn][PID=${process.pid}]`
     originConsoleError(lineHead, ...args)
-    errorFileStream.write(
+    appendLog(
+      'error.log',
       [
         lineHead,
         args.map((arg) => {

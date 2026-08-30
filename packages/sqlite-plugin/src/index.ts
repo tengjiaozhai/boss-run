@@ -41,6 +41,7 @@ import { Init1000000000000 } from "./migrations/1000000000000-Init";
 import { AddJobSourceColumnForChatStartupLogAndMarkAsNotSuitLog1752380078526 } from "./migrations/1752380078526-AddJobSourceColumnForChatStartupLogAndMarkAsNotSuitLog";
 import { AddJobHireStatusTable1766466476822 } from "./migrations/1766466476822-AddJobHireStatusTable";
 import { AddMatchReportTable1767000000000 } from "./migrations/1767000000000-AddMatchReportTable";
+import { AddSubScoresToMatchReport1767100000000 } from "./migrations/1767100000000-AddSubScoresToMatchReport";
 import chunk from 'lodash/chunk'
 import * as typeorm from 'typeorm'
 
@@ -81,7 +82,8 @@ export function initDb(dbFilePath) {
       AddColumnForMarkAsNotSuitLog1746092370665,
       AddJobSourceColumnForChatStartupLogAndMarkAsNotSuitLog1752380078526,
       AddJobHireStatusTable1766466476822,
-      AddMatchReportTable1767000000000
+      AddMatchReportTable1767000000000,
+      AddSubScoresToMatchReport1767100000000
     ],
     migrationsRun: true
   });

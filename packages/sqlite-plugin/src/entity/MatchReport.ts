@@ -34,4 +34,29 @@ export class MatchReport {
     nullable: true
   })
   autoStartupChatRecordId?: number;
+
+  @Column({
+    nullable: true
+  })
+  skillScore?: number;
+
+  @Column({
+    nullable: true
+  })
+  experienceScore?: number;
+
+  @Column({
+    nullable: true
+  })
+  projectScore?: number;
+
+  @Column({
+    nullable: true
+  })
+  salaryScore?: number;
+
+  @Column({
+    nullable: true
+  })
+  developmentScore?: number;
 }

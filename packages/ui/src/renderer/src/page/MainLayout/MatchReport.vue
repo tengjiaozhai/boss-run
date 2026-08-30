@@ -93,6 +93,28 @@
           </ElTag>
           <span v-else class="text-gray">评估失败</span>
         </div>
+        <div v-if="hasSubScores" class="sub-scores">
+          <div class="sub-score-item">
+            <span class="sub-score-label">技能</span>
+            <ElTag :type="getSubScoreTagType(selectedReport.skillScore)" size="small">{{ selectedReport.skillScore ?? '-' }}/20</ElTag>
+          </div>
+          <div class="sub-score-item">
+            <span class="sub-score-label">经验</span>
+            <ElTag :type="getSubScoreTagType(selectedReport.experienceScore)" size="small">{{ selectedReport.experienceScore ?? '-' }}/20</ElTag>
+          </div>
+          <div class="sub-score-item">
+            <span class="sub-score-label">项目</span>
+            <ElTag :type="getSubScoreTagType(selectedReport.projectScore)" size="small">{{ selectedReport.projectScore ?? '-' }}/20</ElTag>
+          </div>
+          <div class="sub-score-item">
+            <span class="sub-score-label">薪资</span>
+            <ElTag :type="getSubScoreTagType(selectedReport.salaryScore)" size="small">{{ selectedReport.salaryScore ?? '-' }}/20</ElTag>
+          </div>
+          <div class="sub-score-item">
+            <span class="sub-score-label">发展</span>
+            <ElTag :type="getSubScoreTagType(selectedReport.developmentScore)" size="small">{{ selectedReport.developmentScore ?? '-' }}/20</ElTag>
+          </div>
+        </div>
         <div class="report-text">
           <pre>{{ selectedReport.report || '无报告内容' }}</pre>
         </div>
@@ -102,8 +124,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { ElTable, ElTableColumn, ElButton, ElPagination, ElDrawer, ElTag, ElMessage } from 'element-plus'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ElTable, ElTableColumn, ElButton, ElPagination, ElDrawer, ElTag } from 'element-plus'
 import { PageReq, PagedRes } from '../../../../common/types/pagination'
 
 interface MatchReportRow {
@@ -115,6 +137,11 @@ interface MatchReportRow {
   report: string | null
   jobSource: number | null
   autoStartupChatRecordId: number | null
+  skillScore?: number | null
+  experienceScore?: number | null
+  projectScore?: number | null
+  salaryScore?: number | null
+  developmentScore?: number | null
   jobName?: string
   salaryLow?: number
   salaryHigh?: number
@@ -188,6 +215,23 @@ function getScoreTagType(score: number) {
   return 'danger'
 }
 
+function getSubScoreTagType(score: number | null | undefined) {
+  if (score === null || score === undefined) return 'info'
+  if (score >= 16) return 'success'
+  if (score >= 8) return 'warning'
+  return 'danger'
+}
+
+const hasSubScores = computed(() => {
+  if (!selectedReport.value) return false
+  const r = selectedReport.value
+  return r.skillScore !== null && r.skillScore !== undefined
+    || r.experienceScore !== null && r.experienceScore !== undefined
+    || r.projectScore !== null && r.projectScore !== undefined
+    || r.salaryScore !== null && r.salaryScore !== undefined
+    || r.developmentScore !== null && r.developmentScore !== undefined
+})
+
 function formatDate(dateStr: string) {
   if (!dateStr) return ''
   const d = new Date(dateStr)
@@ -218,6 +262,24 @@ function formatDate(dateStr: string) {
 .report-detail {
   .report-score {
     margin-bottom: 16px;
+  }
+  .sub-scores {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+    .sub-score-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      .sub-score-label {
+        font-size: 12px;
+        color: #909399;
+      }
+    }
   }
   .report-text {
     pre {

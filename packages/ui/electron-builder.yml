@@ -15,6 +15,16 @@ files:
   - '!node_modules/date-fns/esm/*'
   - '!node_modules/highlight.js/{styles,scss}/*'
   - '!node_modules/typeorm/browser/*'
+  - '!dist{,/**}'
+  - '!dist_new{,/**}'
+  - '!dist_new2{,/**}'
+  - '!dist_new3{,/**}'
+  - '!dist_final{,/**}'
+  - '!dist_final2{,/**}'
+  - '!dist_final3{,/**}'
+  - '!dist_final4{,/**}'
+  - '!out_new{,/**}'
+  - '!out_bak*{,/**}'
 asarUnpack:
   - 'resources/**'
 win:

@@ -2,3 +2,7 @@ node_modules
 database.sqlite
 .env.local
 
+# build & temp output
+_build_tmp/
+packages/ui/dist_final4/
+

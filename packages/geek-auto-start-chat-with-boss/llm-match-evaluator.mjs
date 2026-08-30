@@ -5,6 +5,7 @@ import { readConfigFile, readStorageFile, writeStorageFile } from './runtime-fil
 const RESUME_PLACEHOLDER = `__REPLACE_REAL_RESUME_HERE__`
 const JOB_INFO_PLACEHOLDER = `__REPLACE_JOB_INFO_HERE__`
 const SINGLE_ITEM_DEFAULT_SERVE_WEIGHT = 1
+const MAX_RETRIES = 2
 
 let cachedResumeMarkdown = null
 let cachedResumeKey = null
@@ -17,8 +18,35 @@ __REPLACE_REAL_RESUME_HERE__
 ## 职位
 __REPLACE_JOB_INFO_HERE__
 
-从技能、经验、项目、薪资、方向五个维度分析，输出JSON：
-{"score":0-100整数,"report":"200字内中文分析"}`
+## 评分标准（总分 100 分）
+
+按以下 5 个维度逐项打分，每维度 0-20 分，汇总为总分：
+
+1. 技能匹配（skillScore）：核心技能完全匹配 16-20，部分匹配 8-15，少量相关 1-7，完全不匹配 0
+2. 经验匹配（experienceScore）：年限达标且行业对口 16-20，年限达标但行业偏 8-15，年限不足 1-7，严重不符 0
+3. 项目匹配（projectScore）：有直接相关项目 16-20，有可迁移项目 8-15，弱相关 1-7，无相关 0
+4. 薪资匹配（salaryScore）：薪资范围重叠 16-20，部分重叠 8-15，明显偏离 1-7，无法判断时给 10
+5. 发展匹配（developmentScore）：职业方向一致 16-20，可转型 8-15，偏离 1-7，完全不一致 0
+
+## 硬性条件（一票否决）
+
+以下任一情况，总分不超过 30 分，无论其他维度如何：
+- 学历要求不符（如要求硕士但候选人为本科及以下）
+- 工作年限差距超过 2 年（如要求 5 年但候选人仅 3 年）
+- 行业背景完全无关（如候选人背景为互联网软件，职位为化工/食品/机械制造）
+- 职位类型完全不同（如候选人为产品经理，职位为司机/普工/质量检验员）
+
+## 注意事项
+
+1. 薪资维度：若候选人简历未填写期望薪资，salaryScore 给 10 分（中性），报告中注明"薪资期望未填写，按市场价推断"
+2. 报告开头不要固定使用"候选人"，根据分析重点自然开头
+3. 若触发硬性条件一票否决，报告中需明确说明触发条件
+4. report 字段中需包含明确的最终建议：推荐面试 / 备选考虑 / 不推荐
+
+## 输出格式
+
+严格以 JSON 格式响应，不要包含其他内容：
+{"score": 0到100的整数, "skillScore": 0到20的整数, "experienceScore": 0到20的整数, "projectScore": 0到20的整数, "salaryScore": 0到20的整数, "developmentScore": 0到20的整数, "report": "300字以内的中文分析，需说明各维度得分理由和最终建议"}`
 
 const pickLlmConfigFromList = (llmConfigList, blockModelSet) => {
   if (llmConfigList.length === 1) {
@@ -150,6 +178,45 @@ const getValidTemplate = async () => {
   return template
 }
 
+const clampScore = (score, min, max) => {
+  if (isNaN(score)) return null
+  return Math.max(min, Math.min(max, Math.round(score)))
+}
+
+const parseScoreField = (parsed, field, min, max) => {
+  const val = Number(parsed[field])
+  if (isNaN(val)) return null
+  return clampScore(val, min, max)
+}
+
+const calibrateScore = (score, subScores, report) => {
+  if (score === null) return null
+  let calibrated = score
+
+  const subScoreSum = [
+    subScores.skillScore,
+    subScores.experienceScore,
+    subScores.projectScore,
+    subScores.salaryScore,
+    subScores.developmentScore
+  ].filter((s) => s !== null).reduce((a, b) => a + b, 0)
+
+  if (subScoreSum > 0 && Math.abs(subScoreSum - score) > 10) {
+    calibrated = subScoreSum
+    console.log(`AI match: score calibrated from ${score} to ${calibrated} (sub-score sum=${subScoreSum})`)
+  }
+
+  if (report) {
+    const hardViolation = report.match(/触发.*一票否决|一票否决|学历.*不符|年限.*差距.*2年|行业.*完全无关|职位类型.*完全不同/)
+    if (hardViolation && calibrated > 30) {
+      calibrated = 30
+      console.log(`AI match: score capped to 30 due to hard requirement violation`)
+    }
+  }
+
+  return calibrated
+}
+
 export const evaluateJobMatch = async (targetJobData) => {
   const resumeObject = (await readConfigFile('resumes.json'))?.[0]
   if (!resumeObject || !checkIsResumeContentValid(resumeObject)) {
@@ -182,14 +249,15 @@ export const evaluateJobMatch = async (targetJobData) => {
   const blockModelSet = new Set()
   let res = null
   let llmConfig = null
+  let attemptCount = 0
 
-  while (!res) {
+  while (attemptCount < MAX_RETRIES) {
     llmConfig = pickLlmConfigFromList(llmConfigList, blockModelSet)
     if (!llmConfig) {
       console.log('AI match: all models exhausted, returning null')
       return null
     }
-    console.log(`AI match: using model ${llmConfig.model} at ${llmConfig.providerCompleteApiUrl}`)
+    console.log(`AI match: using model ${llmConfig.model} at ${llmConfig.providerCompleteApiUrl} (attempt ${attemptCount + 1}/${MAX_RETRIES})`)
     const callStartTime = Date.now()
     try {
       const completion = await completes(
@@ -199,36 +267,74 @@ export const evaluateJobMatch = async (targetJobData) => {
           model: llmConfig.model
         },
         messages,
-        { max_tokens: 1200, temperature: 0, response_format: { type: "json_object" } }
+        { max_tokens: 2000, temperature: 0, response_format: { type: "json_object" } }
       )
       res = completion?.choices?.[0] ?? null
       console.log(`AI match: model ${llmConfig.model} responded in ${Date.now() - callStartTime}ms`)
+      if (res) break
     } catch (err) {
       console.log(`AI match: model ${llmConfig.model} failed after ${Date.now() - callStartTime}ms`, err?.message ?? err)
       blockModelSet.add(llmConfig.id)
     }
+    attemptCount++
+  }
+
+  if (!res) {
+    console.log('AI match: all attempts exhausted, returning null')
+    return null
   }
 
   const rawContent = res?.message?.content ?? ''
   let parsed
   try {
-    const cleaned = rawContent
+    let cleaned = rawContent
       .replace(/^```json\s*/m, '')
       .replace(/^```\s*/m, '')
       .replace(/```\s*$/m, '')
       .trim()
-    parsed = JSON.parse(cleaned)
+
+    // 尝试标准 JSON.parse
+    try {
+      parsed = JSON.parse(cleaned)
+    } catch {
+      // 如果标准解析失败，尝试从文本中提取第一个完整的 JSON 对象
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0])
+      } else {
+        throw new Error('No JSON object found in response')
+      }
+    }
   } catch (err) {
-    console.log('AI match: failed to parse LLM response as JSON', rawContent)
+    console.log('AI match: failed to parse LLM response as JSON', rawContent.slice(0, 200))
     return null
   }
 
-  const score = Number(parsed.score)
+  const subScores = {
+    skillScore: parseScoreField(parsed, 'skillScore', 0, 20),
+    experienceScore: parseScoreField(parsed, 'experienceScore', 0, 20),
+    projectScore: parseScoreField(parsed, 'projectScore', 0, 20),
+    salaryScore: parseScoreField(parsed, 'salaryScore', 0, 20),
+    developmentScore: parseScoreField(parsed, 'developmentScore', 0, 20),
+  }
+
   const report = parsed.report ?? ''
-  if (isNaN(score) || score < 0 || score > 100) {
+  let score = parseScoreField(parsed, 'score', 0, 100)
+
+  if (score === null) {
     console.log('AI match: score is invalid', parsed.score)
     return null
   }
 
-  return { score: Math.round(score), report }
+  score = calibrateScore(score, subScores, report)
+
+  return {
+    score,
+    skillScore: subScores.skillScore,
+    experienceScore: subScores.experienceScore,
+    projectScore: subScores.projectScore,
+    salaryScore: subScores.salaryScore,
+    developmentScore: subScores.developmentScore,
+    report
+  }
 }
