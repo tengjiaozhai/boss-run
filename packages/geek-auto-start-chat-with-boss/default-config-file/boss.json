@@ -44,5 +44,6 @@
   "enableAiMatch": false,
   "aiMatchThreshold": 85,
   "aiMatchTimeout": 30000,
-  "aiMatchFallbackStrategy": 2
+  "aiMatchFallbackStrategy": 2,
+  "enableLlmGreeting": false
 }

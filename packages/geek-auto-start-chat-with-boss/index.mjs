@@ -13,6 +13,7 @@ import { setDomainLocalStorage } from '@geekgeekrun/utils/puppeteer/local-storag
 
 import { readConfigFile, writeStorageFile, ensureConfigFileExist, readStorageFile, ensureStorageFileExist } from './runtime-file-utils.mjs'
 import { evaluateJobMatch } from './llm-match-evaluator.mjs'
+import { generateGreetingMessage } from './llm-greeting-generator.mjs'
 import {
   calculateTotalCombinations,
   combineFiltersWithConstraintsGenerator,
@@ -306,6 +307,7 @@ const enableAiMatch = readConfigFile('boss.json').enableAiMatch ?? false
 const aiMatchThreshold = readConfigFile('boss.json').aiMatchThreshold ?? 85
 const aiMatchTimeout = readConfigFile('boss.json').aiMatchTimeout ?? 30000
 const aiMatchFallbackStrategy = readConfigFile('boss.json').aiMatchFallbackStrategy ?? MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL
+const enableLlmGreeting = readConfigFile('boss.json').enableLlmGreeting ?? false
 
 /**
  * @type { import('puppeteer').Browser }
@@ -1479,18 +1481,27 @@ async function toRecommendPage (hooks) {
 
                   // #region AI match evaluation
                   if (enableAiMatch && Object.keys(notSuitReasonIdToStrategyMap).length === 0) {
-                    try {
-                      const matchResult = await evaluateJobMatch(targetJobData)
-                      await hooks.matchReportGenerated?.promise(targetJobData, matchResult)
-                      if (!matchResult || matchResult.score < aiMatchThreshold) {
-                        notSuitReasonIdToStrategyMap.aiMatch = aiMatchFallbackStrategy
-                      }
-                    } catch (err) {
-                      console.log('AI match evaluation failed, skipping job', err)
-                      notSuitReasonIdToStrategyMap.aiMatch = aiMatchFallbackStrategy
+                    let matchResult = null
+                    let aiMatchRetryCount = 0
+                    const aiMatchMaxRetry = 2
+                    while (aiMatchRetryCount < aiMatchMaxRetry) {
                       try {
-                        await hooks.matchReportGenerated?.promise(targetJobData, null)
-                      } catch {}
+                        matchResult = await evaluateJobMatch(targetJobData)
+                        if (matchResult) {
+                          break
+                        }
+                      } catch (err) {
+                        console.log(`AI match evaluation failed (attempt ${aiMatchRetryCount + 1}/${aiMatchMaxRetry})`, err?.message ?? err)
+                      }
+                      aiMatchRetryCount++
+                      if (aiMatchRetryCount < aiMatchMaxRetry) {
+                        console.log(`AI match retrying in 2s...`)
+                        await sleep(2000)
+                      }
+                    }
+                    await hooks.matchReportGenerated?.promise(targetJobData, matchResult)
+                    if (!matchResult || matchResult.score < aiMatchThreshold) {
+                      notSuitReasonIdToStrategyMap.aiMatch = aiMatchFallbackStrategy
                     }
                   }
                   // #endregion
@@ -1563,10 +1574,39 @@ async function toRecommendPage (hooks) {
           const startChatButtonInnerHTML = await page.evaluate('document.querySelector(".job-detail-box .op-btn.op-btn-chat")?.innerHTML.trim()')
 
           await hooks.newChatWillStartup?.promise(targetJobData)
+
+          // #region LLM greeting message generation
+          let llmGreetingText = null
+          if (enableLlmGreeting) {
+            try {
+              llmGreetingText = await generateGreetingMessage(targetJobData)
+              console.log('LLM greeting generated:', llmGreetingText)
+            } catch (err) {
+              console.log('LLM greeting generation failed, will use default greeting', err?.message ?? err)
+            }
+          }
+          // #endregion
+
           const startChatButtonProxy = await page.$('.job-detail-box .op-btn.op-btn-chat')
           await sleep(500)
           //#region click the chat button
           await startChatButtonProxy.click()
+
+          // #region fill LLM greeting into the greet dialog textarea
+          if (llmGreetingText) {
+            try {
+              const greetTextarea = await page.waitForSelector('.greet-boss-dialog .greet-boss-content textarea', { timeout: 5000 })
+              if (greetTextarea) {
+                await greetTextarea.click({ clickCount: 3 })
+                await sleep(200)
+                await greetTextarea.type(llmGreetingText, { delay: 30 })
+                await sleepWithRandomDelay(1000)
+              }
+            } catch (err) {
+              console.log('LLM greeting fill into textarea failed, will proceed with default', err?.message ?? err)
+            }
+          }
+          // #endregion
 
           const waitAddFriendResponse = async () => {
             const addFriendResponse = await page.waitForResponse(

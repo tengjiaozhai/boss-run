@@ -20,6 +20,10 @@ const defaultMatchReportTemplate = fs.readFileSync(
   path.join(__dirname, 'default-storage-file', 'match-report-template.md'),
   'utf-8'
 )
+const defaultGreetingMessageTemplate = fs.readFileSync(
+  path.join(__dirname, 'default-storage-file', 'greeting-message-template.md'),
+  'utf-8'
+)
 import defaultCommonJobConditionConfig from './default-config-file/common-job-condition-config.json' with { type: 'json' }
 export const configFileNameList = ['boss.json', 'dingtalk.json', 'target-company-list.json', 'llm.json', 'common-job-condition-config.json', 'resumes.json']
 
@@ -229,13 +233,14 @@ export const storageFilePath = path.join(
   runtimeFolderPath,
   'storage'
 )
-export const storageFileNameList = ['boss-cookies.json', 'boss-local-storage.json', 'job-not-suit-reason-code-to-text-cache.json', 'match-report-template.md']
+export const storageFileNameList = ['boss-cookies.json', 'boss-local-storage.json', 'job-not-suit-reason-code-to-text-cache.json', 'match-report-template.md', 'greeting-message-template.md']
 
 const defaultStorageFileContentMap = {
   'boss-cookies.json': JSON.stringify(defaultBossCookieStorage),
   'boss-local-storage.json': JSON.stringify(defaultBossLocalStorageStorage),
   'job-not-suit-reason-code-to-text-cache.json': JSON.stringify(defaultJobNotSuitReasonCodeToTextCacheStorage),
-  'match-report-template.md': defaultMatchReportTemplate
+  'match-report-template.md': defaultMatchReportTemplate,
+  'greeting-message-template.md': defaultGreetingMessageTemplate
 }
 export const ensureStorageFileExist = () => {
   ensureRuntimeFolderPathExist()

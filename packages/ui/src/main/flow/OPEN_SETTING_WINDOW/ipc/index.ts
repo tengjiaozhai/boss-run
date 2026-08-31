@@ -173,6 +173,9 @@ export default function initIpc() {
     if (hasOwn(payload, 'aiMatchThreshold')) {
       bossConfig.aiMatchThreshold = payload.aiMatchThreshold
     }
+    if (hasOwn(payload, 'enableLlmGreeting')) {
+      bossConfig.enableLlmGreeting = payload.enableLlmGreeting
+    }
     if (hasOwn(payload, 'blockCompanyNameRegExpStr')) {
       bossConfig.blockCompanyNameRegExpStr = payload.blockCompanyNameRegExpStr
     }

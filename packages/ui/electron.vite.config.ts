@@ -23,6 +23,10 @@ const copyStorageFilesPlugin = () => ({
       join(sourceDir, 'match-report-template.md'),
       join(targetDir, 'match-report-template.md')
     )
+    copyFileSync(
+      join(sourceDir, 'greeting-message-template.md'),
+      join(targetDir, 'greeting-message-template.md')
+    )
   }
 })
 

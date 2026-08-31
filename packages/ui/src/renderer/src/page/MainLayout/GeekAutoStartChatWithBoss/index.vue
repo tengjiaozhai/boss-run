@@ -1694,6 +1694,26 @@
               </div>
             </div>
           </el-card>
+          <el-card class="config-section">
+            <div font-size-14px>AI 打招呼语</div>
+            <div>
+              <el-checkbox
+                v-model="formContent.enableLlmGreeting"
+                @change="
+                  (v) => {
+                    gtagRenderer('llm_greeting_enable_changed', { v })
+                  }
+                "
+              >
+                启用 AI 生成打招呼语
+              </el-checkbox>
+            </div>
+            <div pl-1.5em font-size-12px>
+              <div :style="{ color: formContent.enableLlmGreeting ? '' : '#aaa' }">
+                开启后，每次打招呼时由 LLM 根据简历和职位生成一句针对性的打招呼语（50字以内），填入沟通对话框。失败时回退为平台默认打招呼语。配置保存后需重新运行任务才生效。
+              </div>
+            </div>
+          </el-card>
         </el-form>
       </div>
       <div class="bg-#f8f8f8 pb10px pt10px">
@@ -1853,6 +1873,7 @@ const formContent = ref({
   sageTimePauseMinute: 15,
   enableAiMatch: false,
   aiMatchThreshold: 85,
+  enableLlmGreeting: false,
   blockCompanyNameRegExpStr: '',
   blockCompanyNameRegMatchStrategy: MarkAsNotSuitOp.NO_OP,
   fieldsForUseCommonConfig: {}
@@ -2019,6 +2040,7 @@ electron.ipcRenderer.invoke('fetch-config-file-content').then((res) => {
     isNaN(parsedAiMatchThreshold) || parsedAiMatchThreshold < 0 || parsedAiMatchThreshold > 100
       ? 85
       : parsedAiMatchThreshold
+  formContent.value.enableLlmGreeting = res.config['boss.json'].enableLlmGreeting ?? false
   formContent.value.blockCompanyNameRegExpStr =
     res.config['boss.json'].blockCompanyNameRegExpStr?.trim() ?? ''
   formContent.value.blockCompanyNameRegMatchStrategy =
