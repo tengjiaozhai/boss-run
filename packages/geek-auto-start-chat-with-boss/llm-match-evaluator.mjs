@@ -35,13 +35,15 @@ __REPLACE_JOB_INFO_HERE__
 - 工作年限差距超过 2 年（如要求 5 年但候选人仅 3 年）
 - 行业背景完全无关（如候选人背景为互联网软件，职位为化工/食品/机械制造）
 - 职位类型完全不同（如候选人为产品经理，职位为司机/普工/质量检验员）
+- 薪资区间上限低于 13K（职位薪资不包含 13K，如 8-12K、6-8K），薪资维度一票否决
 
 ## 注意事项
 
 1. 薪资维度：按职位薪资区间与13K基准比较打分（区间上限≥13K匹配、10-13K部分匹配、<10K偏离），无需参考候选人期望薪资；候选人简历未填写期望薪资不影响薪资打分，仅在报告中注明"简历未填写期望薪资"；仅当职位薪资无法解析（如薪资面议且无区间）时给 10 中性分
-2. 报告开头不要固定使用"候选人"，根据分析重点自然开头
-3. 若触发硬性条件一票否决，报告中需明确说明触发条件
-4. report 字段中需包含明确的最终建议：推荐面试 / 备选考虑 / 不推荐
+2. 薪资一票否决：若职位薪资区间上限低于 13K（如 8-12K、6-8K），触发薪资一票否决，总分不超过 30 分，报告中需明确说明"薪资触发一票否决"
+3. 报告开头不要固定使用"候选人"，根据分析重点自然开头
+4. 若触发其他硬性条件一票否决，报告中需明确说明触发条件
+5. report 字段中需包含明确的最终建议：推荐面试 / 备选考虑 / 不推荐
 
 ## 输出格式
 
@@ -189,7 +191,14 @@ const parseScoreField = (parsed, field, min, max) => {
   return clampScore(val, min, max)
 }
 
-const calibrateScore = (score, subScores, report) => {
+const parseSalaryInterval = (salaryDesc) => {
+  if (!salaryDesc) return null
+  const match = String(salaryDesc).match(/(\d+(?:\.\d+)?)\s*[-~—–]\s*(\d+(?:\.\d+)?)/)
+  if (!match) return null
+  return [parseFloat(match[1]), parseFloat(match[2])]
+}
+
+const calibrateScore = (score, subScores, report, { salaryDesc } = {}) => {
   if (score === null) return null
   let calibrated = score
 
@@ -206,13 +215,29 @@ const calibrateScore = (score, subScores, report) => {
     console.log(`AI match: score calibrated from ${score} to ${calibrated} (sub-score sum=${subScoreSum})`)
   }
 
+  let salaryVetoTriggered = false
+  const salaryInterval = parseSalaryInterval(salaryDesc)
+  if (salaryInterval) {
+    const [salaryLow, salaryHigh] = salaryInterval
+    // 薪资区间上限低于 13K（区间不包含 13K）→ 薪资一票否决
+    if (salaryHigh < 13) {
+      salaryVetoTriggered = true
+    }
+  } else if (report?.match(/薪资.*(一票否决|触发否决)/)) {
+    // 薪资区间无法解析时，以报告中的薪资否决表述兜底
+    salaryVetoTriggered = true
+  }
+
   if (report) {
     // 先排除"未触发/不触发"的否定表述，避免误判
     const negatedHardViolation = report.match(/未触发|不触发|无触发|未满足.*否决|未达.*否决/)
     const hardViolation = report.match(/触发.*一票否决|一票否决|学历.*不符|年限.*差距.*2年|行业.*完全无关|职位类型.*完全不同/)
-    if (hardViolation && !negatedHardViolation && calibrated > 30) {
+    if (
+      (salaryVetoTriggered || (hardViolation && !negatedHardViolation)) &&
+      calibrated > 30
+    ) {
       calibrated = 30
-      console.log(`AI match: score capped to 30 due to hard requirement violation`)
+      console.log(`AI match: score capped to 30 due to hard requirement violation${salaryVetoTriggered ? ' (salary veto)' : ''}`)
     }
   }
 
@@ -328,7 +353,9 @@ export const evaluateJobMatch = async (targetJobData) => {
     return null
   }
 
-  score = calibrateScore(score, subScores, report)
+  score = calibrateScore(score, subScores, report, {
+    salaryDesc: targetJobData?.jobInfo?.salaryDesc
+  })
 
   return {
     score,
