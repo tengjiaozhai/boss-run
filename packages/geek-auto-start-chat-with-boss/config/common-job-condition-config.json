@@ -1,1 +1,14 @@
-{"expectCompanies":[],"expectCityList":["南京"],"jobDetailRegExpMatchLogic":1,"expectJobNameRegExpStr":"","expectJobTypeRegExpStr":"","expectJobDescRegExpStr":"","expectSalaryCalculateWay":1,"expectSalaryHigh":50,"expectSalaryLow":10,"blockCompanyNameRegExpStr":""}
+{
+  "expectCompanies": [],
+  "expectCityList": [
+    "南京"
+  ],
+  "jobDetailRegExpMatchLogic": 1,
+  "expectJobNameRegExpStr": "",
+  "expectJobTypeRegExpStr": "",
+  "expectJobDescRegExpStr": "",
+  "expectSalaryCalculateWay": 1,
+  "expectSalaryHigh": 50,
+  "expectSalaryLow": 13,
+  "blockCompanyNameRegExpStr": ""
+}

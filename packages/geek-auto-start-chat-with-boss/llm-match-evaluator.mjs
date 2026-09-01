@@ -25,7 +25,7 @@ __REPLACE_JOB_INFO_HERE__
 1. 技能匹配（skillScore）：核心技能完全匹配 16-20，部分匹配 8-15，少量相关 1-7，完全不匹配 0
 2. 经验匹配（experienceScore）：年限达标且行业对口 16-20，年限达标但行业偏 8-15，年限不足 1-7，严重不符 0
 3. 项目匹配（projectScore）：有直接相关项目 16-20，有可迁移项目 8-15，弱相关 1-7，无相关 0
-4. 薪资匹配（salaryScore）：薪资范围重叠 16-20，部分重叠 8-15，明显偏离 1-7，无法判断时给 10
+4. 薪资匹配（salaryScore）：职位薪资区间上限≥13K 视为匹配 16-20（区间覆盖13K即匹配，如10-15K、12-20K）；上限 10-13K 部分匹配 8-15；上限<10K 明显偏离 1-7；无法判断时给 10
 5. 发展匹配（developmentScore）：职业方向一致 16-20，可转型 8-15，偏离 1-7，完全不一致 0
 
 ## 硬性条件（一票否决）
@@ -38,7 +38,7 @@ __REPLACE_JOB_INFO_HERE__
 
 ## 注意事项
 
-1. 薪资维度：若候选人简历未填写期望薪资，salaryScore 给 10 分（中性），报告中注明"薪资期望未填写，按市场价推断"
+1. 薪资维度：按职位薪资区间与13K基准比较打分（区间上限≥13K匹配、10-13K部分匹配、<10K偏离），无需参考候选人期望薪资；候选人简历未填写期望薪资不影响薪资打分，仅在报告中注明"简历未填写期望薪资"；仅当职位薪资无法解析（如薪资面议且无区间）时给 10 中性分
 2. 报告开头不要固定使用"候选人"，根据分析重点自然开头
 3. 若触发硬性条件一票否决，报告中需明确说明触发条件
 4. report 字段中需包含明确的最终建议：推荐面试 / 备选考虑 / 不推荐
@@ -207,8 +207,10 @@ const calibrateScore = (score, subScores, report) => {
   }
 
   if (report) {
+    // 先排除"未触发/不触发"的否定表述，避免误判
+    const negatedHardViolation = report.match(/未触发|不触发|无触发|未满足.*否决|未达.*否决/)
     const hardViolation = report.match(/触发.*一票否决|一票否决|学历.*不符|年限.*差距.*2年|行业.*完全无关|职位类型.*完全不同/)
-    if (hardViolation && calibrated > 30) {
+    if (hardViolation && !negatedHardViolation && calibrated > 30) {
       calibrated = 30
       console.log(`AI match: score capped to 30 due to hard requirement violation`)
     }
