@@ -1,10 +1,1 @@
-[
-  {
-    "id": "e0324012-b5c5-42b3-99b0-7f6cb5bfa4eb",
-    "providerCompleteApiUrl": "https://api.deepseek.com/v1",
-    "providerApiSecret": "sk-6ba824f380cf433a8f2dcff62138aa09",
-    "model": "deepseek-v4-flash",
-    "serveWeight": 100,
-    "enabled": true
-  }
-]
+[{"id":"e0324012-b5c5-42b3-99b0-7f6cb5bfa4eb","providerCompleteApiUrl":"https://newapi.tinno.com/v1","providerApiSecret":"sk-6GkM5jZowDN1Fspqnyavbv5IPDSqIgVnHYIFakm6NbuQdzHT","model":"deepseek-v4-flash","serveWeight":100,"enabled":true}]

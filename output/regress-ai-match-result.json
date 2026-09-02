@@ -1,0 +1,24 @@
+[
+ {
+  "reportId": 27,
+  "oldScore": 35,
+  "oldReportHead": "候选人3年经验与职位要求的5-10年差距明显；行业背景集中在网约车租赁和酒企营销，缺乏大型连锁加盟品牌工程筹建、施工队管理等相关经验。虽具备B端产品、数据看板和",
+  "ok": false,
+  "err": "evaluator returned null",
+  "elapsedMs": 16142
+ },
+ {
+  "reportId": 28,
+  "oldScore": 35,
+  "oldReportHead": "候选人具备3年产品与业务中台经验，熟悉Axure、XMind等工具，有系统集成与低代码落地实践，但核心匹配度低。职位要求5-10年供应链及中后台产品经验，候选人",
+  "ok": true,
+  "newScore": 53,
+  "skill": 10,
+  "exp": 7,
+  "proj": 6,
+  "salary": 18,
+  "dev": 12,
+  "newReportHead": "刘从杏具备3年中后台产品与数字化运营经验，学历本科符合要求，年限与职位要求5年差距2年未触发一票否决。技能上掌握Axure、PRD、流程设计、系统对接等中后台通用能力，但缺乏餐饮供应链、库存管理、BOM成本核算及银豹等餐饮系统集成经验，核心",
+  "elapsedMs": 12960
+ }
+]

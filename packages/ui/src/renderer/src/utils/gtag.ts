@@ -1,4 +1,8 @@
+import { ANALYTICS_ENABLED } from '../../../common/constant'
+
 export function gtagRenderer(name, params: any = null) {
+  if (!ANALYTICS_ENABLED) return
+
   try {
     electron.ipcRenderer.send('gtag', {
       name,

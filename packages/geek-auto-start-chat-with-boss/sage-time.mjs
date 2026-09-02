@@ -22,6 +22,16 @@ if (parseFloat(sageTimePauseMinute) === 0) {
 
 let totalEnabledTimes = 0
 let recordedOpCount = 0
+
+// 每次 sage 周期（暂停结束）置位一次，由调用方消费来决定业务动作（如关键词轮换）
+let sageCycleEndedSignal = 0
+export const consumeSageCycleEndedSignal = () => {
+  if (sageCycleEndedSignal > 0) {
+    sageCycleEndedSignal = 0
+    return true
+  }
+  return false
+}
 export const waitForSageTimeOrJustContinue = async ({
   tag,
   hooks,
@@ -30,7 +40,7 @@ export const waitForSageTimeOrJustContinue = async ({
     return
   }
   const tagText = tag ? ` ${tag}` : ''
-  if (recordedOpCount > sageTimeOpTimes) {
+  if (recordedOpCount >= sageTimeOpTimes) {
     totalEnabledTimes++
     console.log(`[SageTime${tagText}] 请求已达限制，开启；当前记录次数 ${recordedOpCount}；第 ${totalEnabledTimes} 次开启`)
     await hooks?.sageTimeEnter?.promise({
@@ -45,6 +55,7 @@ export const waitForSageTimeOrJustContinue = async ({
       totalEnabledTimes,
       recordedOpCount,
     })
+    sageCycleEndedSignal++
     recordedOpCount = 0
   }
   else {

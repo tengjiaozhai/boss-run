@@ -39,7 +39,7 @@ import {
   SEARCH_BOX_SELECTOR,
 } from './constant.mjs'
 import { parseSalary } from "@geekgeekrun/sqlite-plugin/dist/utils/parser.js"
-import { waitForSageTimeOrJustContinue } from './sage-time.mjs'
+import { waitForSageTimeOrJustContinue, consumeSageCycleEndedSignal } from './sage-time.mjs'
 import cityGroupData from './cityGroup.mjs'
 import { hasIntersection } from '@geekgeekrun/utils/number.mjs';
 const flattedCityList = []
@@ -307,6 +307,22 @@ const enableAiMatch = readConfigFile('boss.json').enableAiMatch ?? false
 const aiMatchThreshold = readConfigFile('boss.json').aiMatchThreshold ?? 85
 const aiMatchTimeout = readConfigFile('boss.json').aiMatchTimeout ?? 30000
 const aiMatchFallbackStrategy = readConfigFile('boss.json').aiMatchFallbackStrategy ?? MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL
+// AI 得分低于该值时直接在 BOSS 上标记"不合适"（0 = 不启用，一律走 aiMatchFallbackStrategy）
+const aiMatchMarkOnBossBelow = readConfigFile('boss.json').aiMatchMarkOnBossBelow ?? 0
+
+// C 端运营岗位硬性禁止投递：命中 jobName/positionName/postDescription 任一即按 jobNotMatchStrategy 处理。
+// boss.json 的 expectCUserOpsRegExpStr 可覆盖词表，留空使用内置默认
+const expectCUserOpsRegExpStr = readConfigFile('boss.json').expectCUserOpsRegExpStr ?? ''
+const cUserOpsBlockRegExp = (() => {
+  const pattern = expectCUserOpsRegExpStr?.trim()
+    ? expectCUserOpsRegExpStr
+    : 'C端运营|C 端运营|用户运营|增长运营|社群运营|私域运营|私域流量|私域|直播运营|短视频运营|新媒体运营|抖音运营|抖音内容|抖音|小红书运营|小红书|电商运营|店铺运营|淘宝运营|天猫运营|京东运营|拼多多运营|游戏运营|流量运营|APP运营|App运营|app运营'
+  try {
+    return new RegExp(pattern, 'im')
+  } catch {
+    return null
+  }
+})()
 const enableLlmGreeting = readConfigFile('boss.json').enableLlmGreeting ?? false
 
 /**
@@ -807,6 +823,8 @@ async function toRecommendPage (hooks) {
 
   let currentSourceIndex = 0
   afterPageLoad: while (true) {
+    // 当某轮 sage 周期结束时置位，用于将当前关键词轮换到下一个（见下方检查点与轮换点）
+    let rotateKeywordRequested = false
     // check set security question tip modal
     let setSecurityQuestionTipModelProxy
     try {
@@ -839,6 +857,15 @@ async function toRecommendPage (hooks) {
       filterConditionIndex++
       console.log(`current filter condition index to apply: ${filterConditionIndex}`, JSON.stringify(filterCondition))
       findInCurrentFilterCondition: while(true) {
+        // 一个 sage 周期刚结束（暂停已解除）且当前来源是搜索关键词 → 停止扫荡当前关键词，轮换到下一个
+        const sageCycleEnded = consumeSageCycleEndedSignal()
+        if (
+          computedSourceList[currentSourceIndex]?.type === 'search' &&
+          sageCycleEnded
+        ) {
+          rotateKeywordRequested = true
+          break iterateFilterCondition
+        }
         await sleepWithRandomDelay(2500)
 
         await Promise.all([
@@ -861,6 +888,8 @@ async function toRecommendPage (hooks) {
             break
           }
         }
+        // [rotate-dbg]
+        console.log(`[rotate-dbg] 轮次探测: 期望来源#${currentSourceIndex}(${computedSourceList[currentSourceIndex]?.keyword ?? computedSourceList[currentSourceIndex]?.type}) 页面实际来源#${onPageCurrentSourceIndex} url=${page.url()}`)
         if (
           (
             combineRecommendJobFilterType === CombineRecommendJobFilterType.STATIC_COMBINE && filterCondition === null
@@ -880,18 +909,29 @@ async function toRecommendPage (hooks) {
         if (onPageCurrentSourceIndex === currentSourceIndex) {
           // first navigation and can immediately start chat (recommend job)
         } else {
+          // [rotate-dbg]
+          console.log(`[rotate-dbg] 需要切换搜索词 -> ${computedSourceList[currentSourceIndex]?.keyword}`)
           await computedSourceList[currentSourceIndex].setToActiveSource()
-          await page.waitForResponse(
-            response => {
-              if (
-                response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json') ||
-                response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/search/joblist.json')
-              ) {
-                return true
+          try {
+            await page.waitForResponse(
+              response => {
+                if (
+                  response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json') ||
+                  response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/search/joblist.json')
+                ) {
+                  return true
+                }
+                return false
               }
-              return false
-            }
-          );
+            , { timeout: 20000 });
+          } catch (waitRespErr) {
+            // [rotate-dbg]
+            console.log(`[rotate-dbg] 切词后等待 joblist 响应超时/失败: ${waitRespErr?.message ?? waitRespErr}`)
+            throw waitRespErr
+          }
+          // [rotate-dbg]
+          const searchInputVal = await page.evaluate(() => document.querySelector('.page-jobs-main')?.__vue__?.formData?.query)
+          console.log(`[rotate-dbg] 切词完成，页面 query=${searchInputVal} url=${page.url()}`)
           await storeStorage(page).catch(() => void 0)
           await sleepWithRandomDelay(2000)
           await waitForSageTimeOrJustContinue({
@@ -1162,6 +1202,50 @@ async function toRecommendPage (hooks) {
                   //#region collect not suit reasons
                   const notSuitReasonIdToStrategyMap = {}
                   const notSuitConditionHandleMap = {
+                    async cUserOps() {
+                      blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
+                      if (jobNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL || !await page.$('.job-detail-box .job-detail-operate .not-suitable')) {
+                        try {
+                          await hooks.jobMarkedAsNotSuit.promise(
+                            targetJobData,
+                            {
+                              markFrom: ChatStartupFrom.AutoFromRecommendList,
+                              markReason: MarkAsNotSuitReason.JOB_NOT_SUIT,
+                              extInfo: {
+                                reason: 'C_USER_OPS_FORBIDDEN'
+                              },
+                              markOp: MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL,
+                              jobSource: JobSource[computedSourceList[currentSourceIndex]?.type]
+                            }
+                          )
+                        } catch {
+                        }
+                      }
+                      else if (jobNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS) {
+                        try {
+                          await waitForSageTimeOrJustContinue({
+                            tag: 'beforeJobNotSuitMarked',
+                            hooks
+                          })
+                          const { chosenReasonInUi } = await markJobAsNotSuitInRecommendPage(MarkAsNotSuitReason.JOB_NOT_SUIT)
+                          await hooks.jobMarkedAsNotSuit.promise(
+                            targetJobData,
+                            {
+                              markFrom: ChatStartupFrom.AutoFromRecommendList,
+                              markReason: MarkAsNotSuitReason.JOB_NOT_SUIT,
+                              extInfo: {
+                                reason: 'C_USER_OPS_FORBIDDEN',
+                                chosenReasonInUi
+                              },
+                              markOp: MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS,
+                              jobSource: JobSource[computedSourceList[currentSourceIndex]?.type]
+                            }
+                          )
+                        } catch(err) {
+                          console.log(`mark c-user-ops job not suit failed`, err)
+                        }
+                      }
+                    },
                     async companyName() {
                       blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                       if (blockCompanyNameRegMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL && !await page.$('.job-detail-box .job-detail-operate .not-suitable')) {
@@ -1415,24 +1499,64 @@ async function toRecommendPage (hooks) {
                     },
                     async aiMatch() {
                       blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
-                      try {
-                        await hooks.jobMarkedAsNotSuit.promise(
-                          targetJobData,
-                          {
-                            markFrom: ChatStartupFrom.AutoFromRecommendList,
-                            markReason: MarkAsNotSuitReason.JOB_NOT_SUIT,
-                            extInfo: {
-                              reason: 'AI_MATCH_SCORE_BELOW_THRESHOLD'
-                            },
-                            markOp: MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL,
-                            jobSource: JobSource[computedSourceList[currentSourceIndex]?.type]
-                          }
-                        )
-                      } catch {
+                      const aiMatchStrategy = notSuitReasonIdToStrategyMap.aiMatch
+                      if (aiMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL || !await page.$('.job-detail-box .job-detail-operate .not-suitable')) {
+                        try {
+                          await hooks.jobMarkedAsNotSuit.promise(
+                            targetJobData,
+                            {
+                              markFrom: ChatStartupFrom.AutoFromRecommendList,
+                              markReason: MarkAsNotSuitReason.JOB_NOT_SUIT,
+                              extInfo: {
+                                reason: 'AI_MATCH_SCORE_BELOW_THRESHOLD',
+                                aiScore: matchResult?.score
+                              },
+                              markOp: MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL,
+                              jobSource: JobSource[computedSourceList[currentSourceIndex]?.type]
+                            }
+                          )
+                        } catch {
+                        }
+                      }
+                      else if (aiMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS) {
+                        try {
+                          await waitForSageTimeOrJustContinue({
+                            tag: 'beforeJobNotSuitMarked',
+                            hooks
+                          })
+                          const { chosenReasonInUi } = await markJobAsNotSuitInRecommendPage(MarkAsNotSuitReason.JOB_NOT_SUIT)
+                          await hooks.jobMarkedAsNotSuit.promise(
+                            targetJobData,
+                            {
+                              markFrom: ChatStartupFrom.AutoFromRecommendList,
+                              markReason: MarkAsNotSuitReason.JOB_NOT_SUIT,
+                              extInfo: {
+                                reason: 'AI_MATCH_SCORE_BELOW_THRESHOLD',
+                                aiScore: matchResult?.score,
+                                chosenReasonInUi
+                              },
+                              markOp: MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS,
+                              jobSource: JobSource[computedSourceList[currentSourceIndex]?.type]
+                            }
+                          )
+                        } catch(err) {
+                          console.log(`mark ai match not suit failed`, err)
+                        }
                       }
                     }
                   }
 
+                  if (
+                    cUserOpsBlockRegExp &&
+                    (
+                      cUserOpsBlockRegExp.test(targetJobData.jobInfo.jobName?.replace(/\n/g, '') ?? '') ||
+                      cUserOpsBlockRegExp.test(targetJobData.jobInfo.positionName?.replace(/\n/g, '') ?? '') ||
+                      cUserOpsBlockRegExp.test(targetJobData.jobInfo.postDescription?.replace(/\n/g, '') ?? '')
+                    )
+                  ) {
+                    // 硬性禁止投递 C 端运营岗位（命中岗位名/类型/描述任一即否决）
+                    notSuitReasonIdToStrategyMap.cUserOps = jobNotMatchStrategy
+                  }
                   if (
                     !!blockCompanyNameRegExp && blockCompanyNameRegExp.test(selectedJobData.brandName ?? '')
                   ) {
@@ -1501,7 +1625,12 @@ async function toRecommendPage (hooks) {
                     }
                     await hooks.matchReportGenerated?.promise(targetJobData, matchResult)
                     if (!matchResult || matchResult.score < aiMatchThreshold) {
-                      notSuitReasonIdToStrategyMap.aiMatch = aiMatchFallbackStrategy
+                      if (aiMatchMarkOnBossBelow > 0 && matchResult && matchResult.score < aiMatchMarkOnBossBelow) {
+                        // 极低分：直接在 BOSS 上标记"不合适"，避免该职位反复进入评估
+                        notSuitReasonIdToStrategyMap.aiMatch = MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS
+                      } else {
+                        notSuitReasonIdToStrategyMap.aiMatch = aiMatchFallbackStrategy
+                      }
                     }
                   }
                   // #endregion
@@ -1755,6 +1884,27 @@ async function toRecommendPage (hooks) {
           }
         }
       }
+    }
+    // sage 周期轮换：当前关键词完成一轮后直接切到下一个关键词，不等待其被榨干。
+    // 注意 consumeSageCycleEndedSignal 一次性清空全部信号，故每次轮换最多推进一词，不会连跳
+    if (rotateKeywordRequested) {
+      const nextKeywordSourceIndex = (() => {
+        for (let offset = 1; offset < computedSourceList.length; offset++) {
+          const nextIndex = (currentSourceIndex + offset) % computedSourceList.length
+          if (computedSourceList[nextIndex]?.type === 'search') {
+            return nextIndex
+          }
+        }
+        return -1
+      })()
+      if (nextKeywordSourceIndex >= 0) {
+        rotateKeywordRequested = false
+        currentSourceIndex = nextKeywordSourceIndex
+        const rotatedSource = computedSourceList[currentSourceIndex]
+        console.log(`[KeywordRotate] 完成一轮，轮换职位来源到 #${currentSourceIndex}: ${rotatedSource?.type}${rotatedSource?.keyword ? ' · ' + rotatedSource.keyword : ''}`)
+        continue afterPageLoad
+      }
+      rotateKeywordRequested = false
     }
     // for of reach terminal
     if (

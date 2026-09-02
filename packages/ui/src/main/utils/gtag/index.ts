@@ -1,4 +1,5 @@
 import buildInfo from '../../../common/build-info.json'
+import { ANALYTICS_ENABLED } from '../../../common/constant'
 import os from 'node:os'
 
 type LowercaseLetter =
@@ -66,6 +67,8 @@ export default async function gtag<T extends string>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   params: Record<string, any> = {}
 ) {
+  if (!ANALYTICS_ENABLED) return
+
   params = {
     ...getCommonParams(),
     ...params

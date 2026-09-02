@@ -1,4 +1,5 @@
 import { machineId } from 'node-machine-id'
+import { ANALYTICS_ENABLED } from '../../../common/constant'
 
 const GA_ENDPOINT = 'https://www.google-analytics.com/mp/collect'
 const GA_DEBUG_ENDPOINT = 'https://www.google-analytics.com/debug/mp/collect'
@@ -65,6 +66,8 @@ class Analytics {
       engagement_time_msec?: number
     } = {}
   ) {
+    if (!ANALYTICS_ENABLED) return
+
     // Configure session id and engagement time if not present, for more details see:
     // https://developers.google.com/analytics/devguides/collection/protocol/ga4/sending-events?client_type=gtag#recommended_parameters_for_reports
     if (!params.session_id) params.session_id = await this.getOrCreateSessionId()

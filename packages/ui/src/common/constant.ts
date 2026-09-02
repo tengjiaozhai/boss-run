@@ -1,3 +1,5 @@
+export const ANALYTICS_ENABLED = false
+
 export const SINGLE_ITEM_DEFAULT_SERVE_WEIGHT = 1
 export const EXPECT_CHROMIUM_BUILD_ID = '139.0.7258.154'
 

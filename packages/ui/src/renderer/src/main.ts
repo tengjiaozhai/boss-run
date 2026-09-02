@@ -8,6 +8,7 @@ import './style/public.scss'
 import 'element-plus/dist/index.css'
 import 'virtual:uno.css'
 import 'animate.css'
+import './dev/electron-mock'
 
 const pinia = createPinia()
 createApp(App).use(pinia).use(router).use(ElementPlus).mount('#app')

@@ -35,6 +35,7 @@ __REPLACE_JOB_INFO_HERE__
 - 工作年限差距超过 2 年（如要求 5 年但候选人仅 3 年）
 - 行业背景完全无关（如候选人背景为互联网软件，职位为化工/食品/机械制造）
 - 职位类型完全不同（如候选人为产品经理，职位为司机/普工/质量检验员）
+- 岗位属于 C 端用户运营（如用户运营/增长运营/社群运营/私域运营/直播运营/短视频运营/新媒体运营/电商店铺运营等面向 C 端消费者的运营岗位），与候选人 B 端/中台/数字化运营方向不符
 - 薪资区间上限低于 13K（职位薪资不包含 13K，如 8-12K、6-8K），薪资维度一票否决
 
 ## 注意事项
@@ -202,19 +203,7 @@ const calibrateScore = (score, subScores, report, { salaryDesc } = {}) => {
   if (score === null) return null
   let calibrated = score
 
-  const subScoreSum = [
-    subScores.skillScore,
-    subScores.experienceScore,
-    subScores.projectScore,
-    subScores.salaryScore,
-    subScores.developmentScore
-  ].filter((s) => s !== null).reduce((a, b) => a + b, 0)
-
-  if (subScoreSum > 0 && Math.abs(subScoreSum - score) > 10) {
-    calibrated = subScoreSum
-    console.log(`AI match: score calibrated from ${score} to ${calibrated} (sub-score sum=${subScoreSum})`)
-  }
-
+  // 总分由调用方按 5 个子分求和得出，此处仅处理硬性条件一票否决（cap 到 30）
   let salaryVetoTriggered = false
   const salaryInterval = parseSalaryInterval(salaryDesc)
   if (salaryInterval) {
@@ -274,7 +263,6 @@ export const evaluateJobMatch = async (targetJobData) => {
   ]
 
   const blockModelSet = new Set()
-  let res = null
   let llmConfig = null
   let attemptCount = 0
 
@@ -286,8 +274,14 @@ export const evaluateJobMatch = async (targetJobData) => {
     }
     console.log(`AI match: using model ${llmConfig.model} at ${llmConfig.providerCompleteApiUrl} (attempt ${attemptCount + 1}/${MAX_RETRIES})`)
     const callStartTime = Date.now()
+    const markModelUnusable = (reason) => {
+      console.log(`AI match: model ${llmConfig.model} unusable (${reason}), switching to another model if any`)
+      blockModelSet.add(llmConfig.id)
+    }
+
+    let completion
     try {
-      const completion = await completes(
+      completion = await completes(
         {
           baseURL: llmConfig.providerCompleteApiUrl,
           apiKey: llmConfig.providerApiSecret,
@@ -296,74 +290,86 @@ export const evaluateJobMatch = async (targetJobData) => {
         messages,
         { max_tokens: 2000, temperature: 0, response_format: { type: "json_object" } }
       )
-      res = completion?.choices?.[0] ?? null
-      console.log(`AI match: model ${llmConfig.model} responded in ${Date.now() - callStartTime}ms`)
-      if (res) break
     } catch (err) {
       console.log(`AI match: model ${llmConfig.model} failed after ${Date.now() - callStartTime}ms`, err?.message ?? err)
       blockModelSet.add(llmConfig.id)
+      attemptCount++
+      continue
     }
-    attemptCount++
-  }
+    const res = completion?.choices?.[0] ?? null
+    console.log(`AI match: model ${llmConfig.model} responded in ${Date.now() - callStartTime}ms`)
+    if (!res) {
+      markModelUnusable('empty response')
+      attemptCount++
+      continue
+    }
 
-  if (!res) {
-    console.log('AI match: all attempts exhausted, returning null')
-    return null
-  }
-
-  const rawContent = res?.message?.content ?? ''
-  let parsed
-  try {
-    let cleaned = rawContent
-      .replace(/^```json\s*/m, '')
-      .replace(/^```\s*/m, '')
-      .replace(/```\s*$/m, '')
-      .trim()
-
-    // 尝试标准 JSON.parse
+    const rawContent = res?.message?.content ?? ''
+    let parsed
     try {
-      parsed = JSON.parse(cleaned)
-    } catch {
-      // 如果标准解析失败，尝试从文本中提取第一个完整的 JSON 对象
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        parsed = JSON.parse(jsonMatch[0])
-      } else {
-        throw new Error('No JSON object found in response')
+      let cleaned = rawContent
+        .replace(/^```json\s*/m, '')
+        .replace(/^```\s*/m, '')
+        .replace(/```\s*$/m, '')
+        .trim()
+
+      // 尝试标准 JSON.parse
+      try {
+        parsed = JSON.parse(cleaned)
+      } catch {
+        // 如果标准解析失败，尝试从文本中提取第一个完整的 JSON 对象
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0])
+        } else {
+          throw new Error('No JSON object found in response')
+        }
       }
+    } catch (err) {
+      console.log('AI match: failed to parse LLM response as JSON', rawContent.slice(0, 200))
+      markModelUnusable('unparseable JSON')
+      attemptCount++
+      continue
     }
-  } catch (err) {
-    console.log('AI match: failed to parse LLM response as JSON', rawContent.slice(0, 200))
-    return null
+
+    const report = parsed.report ?? ''
+    const subScores = {
+      skillScore: parseScoreField(parsed, 'skillScore', 0, 20),
+      experienceScore: parseScoreField(parsed, 'experienceScore', 0, 20),
+      projectScore: parseScoreField(parsed, 'projectScore', 0, 20),
+      salaryScore: parseScoreField(parsed, 'salaryScore', 0, 20),
+      developmentScore: parseScoreField(parsed, 'developmentScore', 0, 20),
+    }
+
+    const missingSubScores = Object.keys(subScores).filter((key) => subScores[key] === null)
+    if (missingSubScores.length) {
+      console.log(`AI match: model ${llmConfig.model} did not return complete sub-scores (missing: ${missingSubScores.join(', ')}), raw score=${parsed.score}`)
+      markModelUnusable('incomplete sub-scores')
+      attemptCount++
+      continue
+    }
+
+    // 总分一律使用 5 个子分之和，不信任模型自报的 score 字段
+    let score = Object.keys(subScores).reduce((acc, key) => acc + subScores[key], 0)
+    if (Number(parsed.score) !== score) {
+      console.log(`AI match: model-reported score ${parsed.score} != sub-score sum ${score}; using sub-score sum`)
+    }
+
+    score = calibrateScore(score, subScores, report, {
+      salaryDesc: targetJobData?.jobInfo?.salaryDesc
+    })
+
+    return {
+      score,
+      skillScore: subScores.skillScore,
+      experienceScore: subScores.experienceScore,
+      projectScore: subScores.projectScore,
+      salaryScore: subScores.salaryScore,
+      developmentScore: subScores.developmentScore,
+      report
+    }
   }
 
-  const subScores = {
-    skillScore: parseScoreField(parsed, 'skillScore', 0, 20),
-    experienceScore: parseScoreField(parsed, 'experienceScore', 0, 20),
-    projectScore: parseScoreField(parsed, 'projectScore', 0, 20),
-    salaryScore: parseScoreField(parsed, 'salaryScore', 0, 20),
-    developmentScore: parseScoreField(parsed, 'developmentScore', 0, 20),
-  }
-
-  const report = parsed.report ?? ''
-  let score = parseScoreField(parsed, 'score', 0, 100)
-
-  if (score === null) {
-    console.log('AI match: score is invalid', parsed.score)
-    return null
-  }
-
-  score = calibrateScore(score, subScores, report, {
-    salaryDesc: targetJobData?.jobInfo?.salaryDesc
-  })
-
-  return {
-    score,
-    skillScore: subScores.skillScore,
-    experienceScore: subScores.experienceScore,
-    projectScore: subScores.projectScore,
-    salaryScore: subScores.salaryScore,
-    developmentScore: subScores.developmentScore,
-    report
-  }
+  console.log('AI match: all attempts exhausted, returning null')
+  return null
 }
