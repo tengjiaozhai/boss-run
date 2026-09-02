@@ -22,7 +22,8 @@ export async function completes(
   {
     max_tokens = 100,
     temperature = 0,
-    response_format
+    response_format,
+    timeout = undefined
   } = {}
 ) {
   const openai = getOpenAIClient({ baseURL, apiKey });
@@ -36,6 +37,9 @@ export async function completes(
   };
   if (response_format) {
     createParams.response_format = response_format;
+  }
+  if (timeout) {
+    createParams.timeout = timeout;
   }
 
   const completion = await openai.chat.completions.create(createParams);

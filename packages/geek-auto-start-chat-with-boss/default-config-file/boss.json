@@ -43,7 +43,7 @@
   "fieldsForUseCommonConfig": {},
   "enableAiMatch": false,
   "aiMatchThreshold": 85,
-  "aiMatchTimeout": 30000,
+  "aiMatchTimeout": 120000,
   "aiMatchFallbackStrategy": 2,
   "enableLlmGreeting": false
 }

@@ -200,7 +200,7 @@ export const generateGreetingMessage = async (targetJobData) => {
           model: llmConfig.model
         },
         messages,
-        { max_tokens: 800, temperature: 0, response_format: { type: "json_object" } }
+        { max_tokens: 2000, temperature: 0, response_format: { type: "json_object" } }
       )
       res = completion?.choices?.[0] ?? null
       console.log(`Greeting: model ${llmConfig.model} responded in ${Date.now() - callStartTime}ms`)

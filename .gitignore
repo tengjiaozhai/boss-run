@@ -5,4 +5,10 @@ database.sqlite
 # build & temp output
 _build_tmp/
 packages/ui/dist_final4/
+packages/ui/dist_exe/
+packages/ui/dist_build/
+packages/ui/dist_pkg/
+packages/ui/dist/
+
+packages/ui/dist-exe/
 

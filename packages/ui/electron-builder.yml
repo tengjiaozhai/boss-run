@@ -2,6 +2,7 @@ appId: com.geekgeekrun.ui
 productName: GeekGeekRun
 directories:
   buildResources: build
+  output: dist_build
 icon: resources/icon.png
 files:
   - '!**/.vscode/*'
@@ -23,12 +24,17 @@ files:
   - '!dist_final2{,/**}'
   - '!dist_final3{,/**}'
   - '!dist_final4{,/**}'
+  - '!dist-exe{,/**}'
+  - '!dist_exe{,/**}'
+  - '!dist_pkg{,/**}'
+  - '!dist_build{,/**}'
   - '!out_new{,/**}'
   - '!out_bak*{,/**}'
 asarUnpack:
   - 'resources/**'
 win:
   executableName: geekgeekrun
+  signAndEditExecutable: false
 nsis:
   artifactName: ${name}_${version}_${arch}_setup.${ext}
   shortcutName: ${productName}

@@ -5,7 +5,7 @@ import { readConfigFile, readStorageFile, writeStorageFile } from './runtime-fil
 const RESUME_PLACEHOLDER = `__REPLACE_REAL_RESUME_HERE__`
 const JOB_INFO_PLACEHOLDER = `__REPLACE_JOB_INFO_HERE__`
 const SINGLE_ITEM_DEFAULT_SERVE_WEIGHT = 1
-const MAX_RETRIES = 2
+const MAX_RETRIES = 3
 
 let cachedResumeMarkdown = null
 let cachedResumeKey = null
@@ -233,7 +233,7 @@ const calibrateScore = (score, subScores, report, { salaryDesc } = {}) => {
   return calibrated
 }
 
-export const evaluateJobMatch = async (targetJobData) => {
+export const evaluateJobMatch = async (targetJobData, { timeout } = {}) => {
   const resumeObject = (await readConfigFile('resumes.json'))?.[0]
   if (!resumeObject || !checkIsResumeContentValid(resumeObject)) {
     throw new Error('RESUME_NOT_CONFIGURED')
@@ -288,7 +288,7 @@ export const evaluateJobMatch = async (targetJobData) => {
           model: llmConfig.model
         },
         messages,
-        { max_tokens: 2000, temperature: 0, response_format: { type: "json_object" } }
+        { max_tokens: 8000, temperature: 0, response_format: { type: "json_object" }, timeout }
       )
     } catch (err) {
       console.log(`AI match: model ${llmConfig.model} failed after ${Date.now() - callStartTime}ms`, err?.message ?? err)
@@ -297,7 +297,8 @@ export const evaluateJobMatch = async (targetJobData) => {
       continue
     }
     const res = completion?.choices?.[0] ?? null
-    console.log(`AI match: model ${llmConfig.model} responded in ${Date.now() - callStartTime}ms`)
+    const finishReason = res?.finish_reason ?? null
+    console.log(`AI match: model ${llmConfig.model} responded in ${Date.now() - callStartTime}ms (finish_reason=${finishReason})`)
     if (!res) {
       markModelUnusable('empty response')
       attemptCount++
@@ -305,6 +306,18 @@ export const evaluateJobMatch = async (targetJobData) => {
     }
 
     const rawContent = res?.message?.content ?? ''
+    // finish_reason=length 说明输出被 max_tokens 截断（推理模型 reasoning 占用过多），
+    // 这是概率性的（模型有时"想得深"）——重试同模型即可，不拉黑
+    if (finishReason === 'length') {
+      console.log(`AI match: model ${llmConfig.model} response truncated (finish_reason=length), retrying same model...`)
+      attemptCount++
+      continue
+    }
+    if (!rawContent?.trim()) {
+      console.log(`AI match: model ${llmConfig.model} returned empty content, retrying same model...`)
+      attemptCount++
+      continue
+    }
     let parsed
     try {
       let cleaned = rawContent
@@ -326,7 +339,7 @@ export const evaluateJobMatch = async (targetJobData) => {
         }
       }
     } catch (err) {
-      console.log('AI match: failed to parse LLM response as JSON', rawContent.slice(0, 200))
+      console.log('AI match: failed to parse LLM response as JSON', rawContent.slice(0, 300))
       markModelUnusable('unparseable JSON')
       attemptCount++
       continue

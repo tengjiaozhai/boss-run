@@ -1610,7 +1610,7 @@ async function toRecommendPage (hooks) {
                     const aiMatchMaxRetry = 2
                     while (aiMatchRetryCount < aiMatchMaxRetry) {
                       try {
-                        matchResult = await evaluateJobMatch(targetJobData)
+                        matchResult = await evaluateJobMatch(targetJobData, { timeout: aiMatchTimeout })
                         if (matchResult) {
                           break
                         }
