@@ -87,6 +87,9 @@ export default function initIpc() {
     if (hasOwn(payload, 'expectJobDescRegExpStr')) {
       bossConfig.expectJobDescRegExpStr = payload.expectJobDescRegExpStr
     }
+    if (hasOwn(payload, 'expectPositionNameList')) {
+      bossConfig.expectPositionNameList = payload.expectPositionNameList
+    }
     if (hasOwn(payload, 'jobNotMatchStrategy')) {
       bossConfig.jobNotMatchStrategy = payload.jobNotMatchStrategy
     }

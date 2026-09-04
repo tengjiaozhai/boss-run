@@ -212,7 +212,15 @@ let {
   expectJobNameRegExpStr,
   expectJobTypeRegExpStr,
   expectJobDescRegExpStr,
+  expectPositionNameList = []
 } = !fieldsForUseCommonConfig.jobDetail ? readConfigFile('boss.json') : commonJobConditionConfig
+// positionName 白名单的负向排除正则（剔除 BOSS 分类标注噪声导致的白名单误放）
+const blockPositionNameRegExpStr = (
+  !fieldsForUseCommonConfig.jobDetail ? readConfigFile('boss.json') : commonJobConditionConfig
+)?.blockPositionNameRegExpStr ?? ''
+const blockJobNameRegExpStr = (
+  !fieldsForUseCommonConfig.jobDetail ? readConfigFile('boss.json') : commonJobConditionConfig
+)?.blockJobNameRegExpStr ?? ''
 if (
   !fieldsForUseCommonConfig.jobDetail &&
   expectJobRegExpStr &&
@@ -474,6 +482,48 @@ async function markJobAsNotSuitInRecommendPage (reasonCode) {
 }
 
 export function testIfJobTitleOrDescriptionSuit (jobInfo, matchLogic) {
+  // positionName 白名单快速放行：BOSS 标准职位分类命中期望方向时，
+  // 即使 jobName 正则未命中（如"AI大客户运营"→分类"产品运营"）也视为匹配
+  const positionNameForCompare = (jobInfo.positionName ?? '').replace(/\n/g, '').trim()
+  const jobNameForCompare = (jobInfo.jobName ?? '').replace(/\n/g, '').trim()
+  if (
+    Array.isArray(expectPositionNameList) &&
+    expectPositionNameList.length &&
+    expectPositionNameList.some(it => {
+      const expectItem = String(it ?? '').trim()
+      if (!expectItem) {
+        return false
+      }
+      // 组合语法："positionName::jobName关键词"，表示 positionName 匹配且 jobName 含指定关键词
+      // 例："实施顾问::飞书" = positionName 是"实施顾问" 且 jobName 含"飞书"
+      const [positionNamePart, jobNameKeywordPart] = expectItem.split('::')
+      const positionNamePattern = (positionNamePart ?? expectItem).trim()
+      let positionNameHit
+      if (positionNamePattern.endsWith('*')) {
+        positionNameHit = positionNameForCompare.startsWith(positionNamePattern.slice(0, -1))
+      } else {
+        positionNameHit = positionNameForCompare === positionNamePattern
+      }
+      if (!positionNameHit) {
+        return false
+      }
+      const jobNameKeyword = (jobNameKeywordPart ?? '').trim()
+      if (!jobNameKeyword) {
+        return true
+      }
+      return jobNameForCompare.includes(jobNameKeyword)
+    })
+  ) {
+    // 白名单命中后再用负向排除正则剔除明显不相关的岗位
+    // （BOSS 的 positionName 分类存在标注噪声，如"外贸业务员"被标成"客户成功"）
+    if (blockPositionNameRegExpStr.trim() && new RegExp(blockPositionNameRegExpStr, 'im').test(positionNameForCompare)) {
+      return false
+    }
+    if (blockJobNameRegExpStr.trim() && new RegExp(blockJobNameRegExpStr, 'im').test(jobNameForCompare)) {
+      return false
+    }
+    return true
+  }
   let isJobNameSuit = matchLogic === JobDetailRegExpMatchLogic.SOME ? false : true
   try {
     if (expectJobNameRegExpStr.trim()) {

@@ -8,5 +8,6 @@
   "jobDetailRegExpMatchLogic": 1,
   "expectSalaryCalculateWay": 1,
   "expectSalaryLow": null,
-  "expectSalaryHigh": null
+  "expectSalaryHigh": null,
+  "expectPositionNameList": []
 }

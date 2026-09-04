@@ -1559,6 +1559,38 @@
                         max-h-6lh
                       />
                     </el-form-item>
+                    <el-form-item
+                      v-if="!formContent.fieldsForUseCommonConfig.jobDetail"
+                      mb0
+                    >
+                      <div font-size-12px>
+                        职位分类白名单（每行一个，BOSS 标准分类，命中即放行）
+                      </div>
+                      <el-input
+                        v-model="expectPositionNameListText"
+                        type="textarea"
+                        placeholder="产品运营&#10;运营经理/主管&#10;数据/策略运营"
+                        :autosize="{ minRows: 3 }"
+                        max-h-8lh
+                      />
+                      <div font-size-12px color-#909399>
+                        当职位名称正则未命中、但 BOSS 职位分类命中白名单时也会放行进入 AI
+                        评估。支持前缀匹配（如「运营*」）。用于弥补职位名称写法多样导致的漏匹配。
+                      </div>
+                    </el-form-item>
+                    <el-form-item v-else mb0>
+                      <div font-size-12px>
+                        职位分类白名单（每行一个，BOSS 标准分类，命中即放行）
+                      </div>
+                      <el-input
+                        :model-value="(commonJobConditionConfig.expectPositionNameList ?? []).join('\n')"
+                        disabled
+                        inert
+                        type="textarea"
+                        :autosize="{ minRows: 3 }"
+                        max-h-8lh
+                      />
+                    </el-form-item>
                   </div>
                 </div>
                 <div
@@ -1876,7 +1908,19 @@ const formContent = ref({
   enableLlmGreeting: false,
   blockCompanyNameRegExpStr: '',
   blockCompanyNameRegMatchStrategy: MarkAsNotSuitOp.NO_OP,
+  expectPositionNameList: [],
   fieldsForUseCommonConfig: {}
+})
+
+// 职位分类白名单：数组 <-> 换行文本 转换（UI 用文本编辑，配置存数组）
+const expectPositionNameListText = computed({
+  get: () => (formContent.value.expectPositionNameList ?? []).join('\n'),
+  set: (v: string) => {
+    formContent.value.expectPositionNameList = (v ?? '')
+      .split('\n')
+      .map((it) => it.trim())
+      .filter(Boolean)
+  }
 })
 
 const anyCombineBossRecommendFilterHasCondition = computed(() => {
@@ -1961,6 +2005,9 @@ electron.ipcRenderer.invoke('fetch-config-file-content').then((res) => {
   formContent.value.expectJobNameRegExpStr = res.config['boss.json'].expectJobNameRegExpStr?.trim()
   formContent.value.expectJobTypeRegExpStr = res.config['boss.json'].expectJobTypeRegExpStr?.trim()
   formContent.value.expectJobDescRegExpStr = res.config['boss.json'].expectJobDescRegExpStr?.trim()
+  formContent.value.expectPositionNameList = Array.isArray(res.config['boss.json'].expectPositionNameList)
+    ? res.config['boss.json'].expectPositionNameList
+    : []
 
   formContent.value.jobNotMatchStrategy = strategyOptionWhenCurrentJobNotMatch
     .map((it) => it.value)
