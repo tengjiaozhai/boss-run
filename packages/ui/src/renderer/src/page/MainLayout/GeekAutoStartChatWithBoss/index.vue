@@ -1573,7 +1573,7 @@
                         :autosize="{ minRows: 3 }"
                         max-h-8lh
                       />
-                      <div font-size-12px color-#909399>
+                      <div font-size-12px class="color-#909399">
                         当职位名称正则未命中、但 BOSS 职位分类命中白名单时也会放行进入 AI
                         评估。支持前缀匹配（如「运营*」）。用于弥补职位名称写法多样导致的漏匹配。
                       </div>
