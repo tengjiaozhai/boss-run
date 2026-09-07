@@ -22,6 +22,22 @@ const DEFAULT_INVOKE_RESULTS: Record<string, unknown> = {
     }
   }),
   'fetch-resume-content': () => ({ content: {} }),
+  'list-resumes': () => [],
+  'set-active-resume': () => [],
+  'delete-resume': () => [],
+  'parse-resume-docx': () => ({
+    expectJob: '',
+    content: {
+      name: '',
+      workYearDesc: '',
+      expectJob: '',
+      userDescription: '',
+      expectSalary: ['', ''],
+      geekWorkExpList: [],
+      geekProjExpList: []
+    }
+  }),
+  'choose-file': () => ({ canceled: true, filePaths: [] }),
   'read-storage-file': () => null,
   'get-auto-start-chat-record': () => [],
   'get-mark-as-not-suit-record': () => [],

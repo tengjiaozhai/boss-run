@@ -1,6 +1,6 @@
 import { completes } from '@geekgeekrun/utils/gpt-request.mjs'
 import { formatResumeJsonToMarkdown, checkIsResumeContentValid } from '@geekgeekrun/utils/resume.mjs'
-import { readConfigFile, readStorageFile, writeStorageFile } from './runtime-file-utils.mjs'
+import { readConfigFile, readStorageFile, writeStorageFile, readActiveResume } from './runtime-file-utils.mjs'
 
 const RESUME_PLACEHOLDER = `__REPLACE_REAL_RESUME_HERE__`
 const JOB_INFO_PLACEHOLDER = `__REPLACE_JOB_INFO_HERE__`
@@ -234,7 +234,7 @@ const calibrateScore = (score, subScores, report, { salaryDesc } = {}) => {
 }
 
 export const evaluateJobMatch = async (targetJobData, { timeout } = {}) => {
-  const resumeObject = (await readConfigFile('resumes.json'))?.[0]
+  const resumeObject = await readActiveResume()
   if (!resumeObject || !checkIsResumeContentValid(resumeObject)) {
     throw new Error('RESUME_NOT_CONFIGURED')
   }

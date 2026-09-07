@@ -309,3 +309,45 @@ export const writeStorageFile = async (fileName, content, { isJson } = {}) => {
 export const getPublicDbFilePath = () => {
   return path.join(storageFilePath, 'public.db')
 }
+
+// ===== resume 多份管理（最多 MAX_RESUME_COUNT 份，active 标记当前生效） =====
+export const MAX_RESUME_COUNT = 3
+
+const genResumeId = () => `resume-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+
+// 补 id、确保 active 唯一（无 active 时首条置 active）。会原地修改数组元素
+export const normalizeResumesList = (resumeList) => {
+  const list = Array.isArray(resumeList) ? resumeList.filter((it) => it && typeof it === 'object') : []
+  list.forEach((it, index) => {
+    if (!it.id?.trim()) {
+      it.id = genResumeId()
+    }
+    if (!(it.active === true || it.active === false)) {
+      it.active = index === 0
+    }
+  })
+  if (list.length) {
+    const activeList = list.filter((it) => it.active)
+    if (!activeList.length) {
+      list[0].active = true
+    } else if (activeList.length > 1) {
+      let firstActiveFound = false
+      list.forEach((it) => {
+        if (it.active) {
+          if (!firstActiveFound) {
+            firstActiveFound = true
+          } else {
+            it.active = false
+          }
+        }
+      })
+    }
+  }
+  return list
+}
+
+// 读取「当前生效」简历条目；旧格式（无 id/active）自动按首条生效，不写盘
+export const readActiveResume = async () => {
+  const list = normalizeResumesList(await readConfigFile('resumes.json'))
+  return list.find((it) => it.active) ?? list[0] ?? null
+}

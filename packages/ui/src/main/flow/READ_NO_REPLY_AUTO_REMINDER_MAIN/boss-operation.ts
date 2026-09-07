@@ -5,7 +5,8 @@ import { recordGptCompletionRequest, RequestSceneEnum } from '../../features/llm
 import {
   readConfigFile,
   readStorageFile,
-  writeStorageFile
+  writeStorageFile,
+  readActiveResume
 } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
 import { formatResumeJsonToMarkdown } from '../../../common/utils/resume'
 import { SINGLE_ITEM_DEFAULT_SERVE_WEIGHT } from '../../../common/constant'
@@ -145,7 +146,7 @@ export const requestNewMessageContent = async (
   } = {}
 ) => {
   const systemMessageTemplate = await getValidTemplate({ type: 'rechat' })
-  const resumeObject = (await readConfigFile('resumes.json'))?.[0]
+  const resumeObject = await readActiveResume()
   const resumeContent = formatResumeJsonToMarkdown(resumeObject)
   const chatList = [
     {

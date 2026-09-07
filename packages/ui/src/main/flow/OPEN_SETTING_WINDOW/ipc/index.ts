@@ -5,11 +5,15 @@ import {
   readConfigFile,
   writeConfigFile,
   readStorageFile,
-  storageFilePath
+  storageFilePath,
+  readActiveResume,
+  normalizeResumesList,
+  MAX_RESUME_COUNT
 } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
 import { ChildProcess } from 'child_process'
 import * as JSONStream from 'JSONStream'
 import { checkCookieListFormat } from '../../../../common/utils/cookie'
+import { parseResumeDocx } from '../../../utils/resume-docx-parser'
 import { getAnyAvailablePuppeteerExecutable } from '../../DOWNLOAD_DEPENDENCIES/utils/puppeteer-executable/index'
 import { mainWindow } from '../../../window/mainWindow'
 import {
@@ -453,6 +457,56 @@ export default function initIpc() {
   })
   ipcMain.on('close-llm-config', () => llmConfigWindow?.close())
 
+  // ===== resume 多份管理（最多 3 份，active 标记当前生效） =====
+  const toResumeMeta = (item) => ({
+    id: item.id,
+    name: item.name ?? '',
+    active: item.active === true,
+    updateTime: item.updateTime ?? null,
+    expectJob: item.content?.expectJob ?? ''
+  })
+  const normalizeResumesAndPersistIfChanged = async () => {
+    const current = await readConfigFile('resumes.json')
+    const normalized = normalizeResumesList(JSON.parse(JSON.stringify(current)))
+    if (JSON.stringify(normalized) !== JSON.stringify(current)) {
+      await writeConfigFile('resumes.json', normalized)
+    }
+    return normalized
+  }
+  const saveResumeContentToFile = async ({ id, content }) => {
+    if (!content || typeof content !== 'object') {
+      throw new Error('INVALID_RESUME_CONTENT')
+    }
+    const list = await normalizeResumesAndPersistIfChanged()
+    const displayName = content.expectJob?.trim() || '未命名简历'
+    if (id) {
+      const target = list.find((it) => it.id === id)
+      if (!target) {
+        throw new Error('RESUME_NOT_FOUND')
+      }
+      target.content = content
+      target.name = displayName
+      target.updateTime = Number(new Date())
+    } else {
+      if (list.length >= MAX_RESUME_COUNT) {
+        throw new Error('MAX_RESUME_COUNT_EXCEEDED')
+      }
+      // 新建的简历保存后即成为当前生效份
+      list.forEach((it) => {
+        it.active = false
+      })
+      list.push({
+        name: displayName,
+        active: true,
+        updateTime: Number(new Date()),
+        content
+      })
+      normalizeResumesList(list)
+    }
+    await writeConfigFile('resumes.json', list)
+    return list.map(toResumeMeta)
+  }
+
   ipcMain.handle('resume-edit', async () => {
     createResumeEditorWindow({
       parent: mainWindow!,
@@ -460,28 +514,69 @@ export default function initIpc() {
       show: true
     })
     const defer = Promise.withResolvers()
-    async function saveResumeHandler(_, resumeContent) {
-      await writeConfigFile('resumes.json', [
-        {
-          name: '默认简历',
-          updateTime: Number(new Date()),
-          content: resumeContent
-        }
-      ])
-      defer.resolve()
-      resumeEditorWindow?.close()
+    let resolved = false
+    async function saveResumeHandler(_, payload) {
+      const metaList = await saveResumeContentToFile(payload ?? {})
+      // 保存成功后即返回（窗口保持打开以便继续编辑/导入），renderer 负责刷新列表
+      if (!resolved) {
+        resolved = true
+        defer.resolve(metaList)
+      }
     }
     ipcMain.handle('save-resume-content', saveResumeHandler)
     resumeEditorWindow?.once('closed', () => {
       ipcMain.removeHandler('save-resume-content')
-      defer.reject(new Error('cancel'))
+      if (!resolved) {
+        defer.reject(new Error('cancel'))
+      }
     })
 
     return defer.promise
   })
-  ipcMain.handle('fetch-resume-content', async () => {
-    const res = (await readConfigFile('resumes.json'))?.[0]
-    return res?.content ?? null
+  ipcMain.handle('list-resumes', async () => {
+    const list = await normalizeResumesAndPersistIfChanged()
+    return list.map(toResumeMeta)
+  })
+  ipcMain.handle('fetch-resume-content', async (_, { id } = {}) => {
+    const list = normalizeResumesList(await readConfigFile('resumes.json'))
+    const target = id
+      ? list.find((it) => it.id === id)
+      : list.find((it) => it.active === true) ?? list[0]
+    return target?.content ?? null
+  })
+  ipcMain.handle('set-active-resume', async (_, { id } = {}) => {
+    const list = await normalizeResumesAndPersistIfChanged()
+    if (!list.some((it) => it.id === id)) {
+      throw new Error('RESUME_NOT_FOUND')
+    }
+    list.forEach((it) => {
+      it.active = it.id === id
+    })
+    await writeConfigFile('resumes.json', list)
+    return list.map(toResumeMeta)
+  })
+  ipcMain.handle('delete-resume', async (_, { id } = {}) => {
+    const list = await normalizeResumesAndPersistIfChanged()
+    if (list.length <= 1) {
+      throw new Error('AT_LEAST_ONE_RESUME')
+    }
+    const index = list.findIndex((it) => it.id === id)
+    if (index < 0) {
+      throw new Error('RESUME_NOT_FOUND')
+    }
+    const wasActive = list[index].active === true
+    list.splice(index, 1)
+    if (wasActive) {
+      list[0].active = true
+    }
+    await writeConfigFile('resumes.json', list)
+    return list.map(toResumeMeta)
+  })
+  ipcMain.handle('parse-resume-docx', async (_, { filePath } = {}) => {
+    if (!filePath || !/\.docx$/i.test(filePath)) {
+      throw new Error('NOT_A_DOCX_FILE')
+    }
+    return await parseResumeDocx(filePath)
   })
   ipcMain.on('no-reply-reminder-prompt-edit', async (_, { type }) => {
     const template = await readStorageFile(defaultPromptMap[type].fileName, {
@@ -498,11 +593,11 @@ export default function initIpc() {
     await getValidTemplate({ type })
   })
   ipcMain.handle('check-is-resume-content-valid', async () => {
-    const res = (await readConfigFile('resumes.json'))?.[0]
+    const res = await readActiveResume()
     return checkIsResumeContentValid(res)
   })
   ipcMain.handle('resume-content-enough-detect', async () => {
-    const res = (await readConfigFile('resumes.json'))?.[0]
+    const res = await readActiveResume()
     return resumeContentEnoughDetect(res)
   })
   ipcMain.handle('overwrite-auto-remind-prompt-with-default', async (_, { type }) => {
