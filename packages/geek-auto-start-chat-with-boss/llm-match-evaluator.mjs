@@ -200,14 +200,16 @@ const parseSalaryInterval = (salaryDesc) => {
 }
 
 const calibrateScore = (score, subScores, report, { salaryDesc } = {}) => {
-  if (score === null) return null
+  if (score === null) {
+    return { score: null, salaryVeto: false, hardVeto: false }
+  }
   let calibrated = score
 
   // 总分由调用方按 5 个子分求和得出，此处仅处理硬性条件一票否决（cap 到 30）
   let salaryVetoTriggered = false
   const salaryInterval = parseSalaryInterval(salaryDesc)
   if (salaryInterval) {
-    const [salaryLow, salaryHigh] = salaryInterval
+    const [, salaryHigh] = salaryInterval
     // 薪资区间上限低于 13K（区间不包含 13K）→ 薪资一票否决
     if (salaryHigh < 13) {
       salaryVetoTriggered = true
@@ -217,20 +219,26 @@ const calibrateScore = (score, subScores, report, { salaryDesc } = {}) => {
     salaryVetoTriggered = true
   }
 
+  let hardVetoTriggered = false
   if (report) {
     // 先排除"未触发/不触发"的否定表述，避免误判
     const negatedHardViolation = report.match(/未触发|不触发|无触发|未满足.*否决|未达.*否决/)
     const hardViolation = report.match(/触发.*一票否决|一票否决|学历.*不符|年限.*差距.*2年|职位类型.*完全不同/)
-    if (
-      (salaryVetoTriggered || (hardViolation && !negatedHardViolation)) &&
-      calibrated > 30
-    ) {
+    const otherHardVeto = !!(hardViolation && !negatedHardViolation)
+    if ((salaryVetoTriggered || otherHardVeto) && calibrated > 30) {
       calibrated = 30
+      hardVetoTriggered = otherHardVeto && !salaryVetoTriggered
       console.log(`AI match: score capped to 30 due to hard requirement violation${salaryVetoTriggered ? ' (salary veto)' : ''}`)
+    } else if (otherHardVeto) {
+      hardVetoTriggered = true
     }
   }
 
-  return calibrated
+  return {
+    score: calibrated,
+    salaryVeto: salaryVetoTriggered,
+    hardVeto: hardVetoTriggered || salaryVetoTriggered
+  }
 }
 
 const getResumeDisplayName = (resumeObject) => {
@@ -244,6 +252,7 @@ const getResumeDisplayName = (resumeObject) => {
 }
 
 const evaluateJobMatchWithResume = async (targetJobData, resumeObject, { timeout } = {}) => {
+  const resumeStartedAt = Date.now()
   const resumeCacheKey = JSON.stringify(resumeObject)
   if (resumeCacheKey !== cachedResumeKey) {
     cachedResumeMarkdown = formatResumeJsonToMarkdown(resumeObject)
@@ -271,13 +280,23 @@ const evaluateJobMatchWithResume = async (targetJobData, resumeObject, { timeout
   const blockModelSet = new Set()
   let llmConfig = null
   let attemptCount = 0
+  let lastModel = null
 
   while (attemptCount < MAX_RETRIES) {
     llmConfig = pickLlmConfigFromList(llmConfigList, blockModelSet)
     if (!llmConfig) {
       console.log('AI match: all models exhausted, returning null')
-      return null
+      return {
+        outcome: 'failed',
+        durationMs: Date.now() - resumeStartedAt,
+        model: lastModel,
+        attempts: attemptCount,
+        score: null,
+        salaryVeto: false,
+        hardVeto: false
+      }
     }
+    lastModel = llmConfig.model
     console.log(`AI match: using model ${llmConfig.model} at ${llmConfig.providerCompleteApiUrl} (attempt ${attemptCount + 1}/${MAX_RETRIES})`)
     const callStartTime = Date.now()
     const markModelUnusable = (reason) => {
@@ -374,46 +393,108 @@ const evaluateJobMatchWithResume = async (targetJobData, resumeObject, { timeout
       console.log(`AI match: model-reported score ${parsed.score} != sub-score sum ${score}; using sub-score sum`)
     }
 
-    score = calibrateScore(score, subScores, report, {
+    const calibrated = calibrateScore(score, subScores, report, {
       salaryDesc: targetJobData?.jobInfo?.salaryDesc
     })
 
     return {
-      score,
+      outcome: 'success',
+      score: calibrated.score,
       skillScore: subScores.skillScore,
       experienceScore: subScores.experienceScore,
       projectScore: subScores.projectScore,
       salaryScore: subScores.salaryScore,
       developmentScore: subScores.developmentScore,
-      report
+      report,
+      model: llmConfig.model,
+      durationMs: Date.now() - resumeStartedAt,
+      attempts: attemptCount + 1,
+      salaryVeto: calibrated.salaryVeto,
+      hardVeto: calibrated.hardVeto
     }
   }
 
   console.log('AI match: all attempts exhausted, returning null')
-  return null
+  return {
+    outcome: 'failed',
+    durationMs: Date.now() - resumeStartedAt,
+    model: lastModel,
+    attempts: attemptCount,
+    score: null,
+    salaryVeto: false,
+    hardVeto: false
+  }
 }
 
 export const evaluateJobMatch = async (targetJobData, { timeout } = {}) => {
+  const runStartedAt = Date.now()
   const allResumes = await readAllResumes()
+  const invalidResumes = allResumes.filter((it) => !checkIsResumeContentValid(it))
   const validResumes = allResumes.filter((it) => checkIsResumeContentValid(it))
   if (!validResumes.length) {
     throw new Error('RESUME_NOT_CONFIGURED')
   }
+
+  const resumeTraces = invalidResumes.map((resumeObject) => ({
+    resumeId: resumeObject.id ?? null,
+    resumeName: getResumeDisplayName(resumeObject),
+    resumeActive: !!resumeObject.active,
+    outcome: 'skipped-invalid',
+    score: null,
+    skillScore: null,
+    experienceScore: null,
+    projectScore: null,
+    salaryScore: null,
+    developmentScore: null,
+    durationMs: 0,
+    model: null,
+    attempts: 0,
+    salaryVeto: false,
+    hardVeto: false
+  }))
 
   let best = null
   for (const resumeObject of validResumes) {
     const resumeName = getResumeDisplayName(resumeObject)
     console.log(`AI match: evaluating resume ${resumeName} (${resumeObject.id ?? 'no-id'})`)
     const result = await evaluateJobMatchWithResume(targetJobData, resumeObject, { timeout })
-    if (!result) {
+    const trace = {
+      resumeId: resumeObject.id ?? null,
+      resumeName,
+      resumeActive: !!resumeObject.active,
+      outcome: result?.outcome ?? 'failed',
+      score: result?.score ?? null,
+      skillScore: result?.skillScore ?? null,
+      experienceScore: result?.experienceScore ?? null,
+      projectScore: result?.projectScore ?? null,
+      salaryScore: result?.salaryScore ?? null,
+      developmentScore: result?.developmentScore ?? null,
+      durationMs: result?.durationMs ?? null,
+      model: result?.model ?? null,
+      attempts: result?.attempts ?? null,
+      salaryVeto: !!result?.salaryVeto,
+      hardVeto: !!result?.hardVeto
+    }
+    resumeTraces.push(trace)
+
+    if (result?.outcome !== 'success' || result.score === null) {
       console.log(`AI match: resume ${resumeName} returned null, skipping`)
       continue
     }
     const enriched = {
-      ...result,
+      score: result.score,
+      skillScore: result.skillScore,
+      experienceScore: result.experienceScore,
+      projectScore: result.projectScore,
+      salaryScore: result.salaryScore,
+      developmentScore: result.developmentScore,
+      report: result.report,
       resumeId: resumeObject.id ?? null,
       resumeName,
-      resumeActive: !!resumeObject.active
+      resumeActive: !!resumeObject.active,
+      model: result.model,
+      salaryVeto: result.salaryVeto,
+      hardVeto: result.hardVeto
     }
     console.log(`AI match: resume ${resumeName} score=${enriched.score}`)
     if (
@@ -425,6 +506,28 @@ export const evaluateJobMatch = async (targetJobData, { timeout } = {}) => {
     }
   }
 
+  const succeeded = resumeTraces.filter((it) => it.outcome === 'success')
+  const matchTrace = {
+    jobName: targetJobData?.jobInfo?.jobName ?? null,
+    jobSalary: targetJobData?.jobInfo?.salaryDesc ?? null,
+    totalDurationMs: Date.now() - runStartedAt,
+    resumeTotal: allResumes.length,
+    resumeValid: validResumes.length,
+    resumeAttempted: validResumes.length,
+    resumeSucceeded: succeeded.length,
+    selected: best
+      ? {
+          resumeId: best.resumeId,
+          resumeName: best.resumeName,
+          resumeActive: best.resumeActive,
+          score: best.score,
+          model: best.model ?? null
+        }
+      : null,
+    resumes: resumeTraces
+  }
+  console.log('AI match summary:', JSON.stringify(matchTrace))
+
   if (!best) {
     return null
   }
@@ -435,5 +538,8 @@ export const evaluateJobMatch = async (targetJobData, { timeout } = {}) => {
     console.log(`AI match: selected best resume ${best.resumeName} with score=${best.score}`)
   }
 
-  return best
+  return {
+    ...best,
+    matchTrace
+  }
 }
