@@ -10,7 +10,7 @@
           <el-alert type="info" :closable="false" mb20px line-height-1.25em>
             <ul pl16px m0>
               <li>
-                最多可保存 {{ MAX_RESUME_COUNT }} 份简历；标记「当前生效」的一份会作为提示词提交给语言大模型，用于匹配职位、生成已读不回提醒消息
+                最多可保存 {{ MAX_RESUME_COUNT }} 份简历；AI 职位匹配会对所有有效简历分别评估并取最高分；「当前生效」仍用于生成已读不回提醒消息
               </li>
               <li>期望薪资仅作匹配职位使用，不会用作生成已读不回提醒消息</li>
               <li>
@@ -76,7 +76,7 @@
           <el-alert type="info" :closable="false" mb20px line-height-1.25em>
             <ul pl16px m0>
               <li>
-                此简历将作为提示词的一部分提交给语言大模型，仅在匹配职位、生成已读不回提醒消息时使用；大部分信息非必填，但在不填写的情况下，可能会匹配到不准确的职位或生成预料之外的已读不回提醒消息
+                此简历会参与 AI 职位匹配（多份有效简历分别评估，取最高分）；「当前生效」简历还会用于生成已读不回提醒消息。大部分信息非必填，但内容不足时可能匹配不准或生成不符合预期的提醒
               </li>
               <li>期望薪资仅作匹配职位使用，不会用作生成已读不回提醒消息</li>
               <li v-if="!editingId" font-size-12px>
@@ -336,7 +336,7 @@
                           />
                           <el-date-picker
                             v-model="proj.endYearMon"
-                            :style="{ '--el-date-editor-width': 'auto' }"
+                            :style="{ '--el-date-editor-width": 'auto' }"
                             type="month"
                             placeholder="结束月份"
                           />
