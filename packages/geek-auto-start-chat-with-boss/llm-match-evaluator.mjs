@@ -1,1 +1,1 @@
-TEST_FULL_UPLOAD_PENDING
+LOAD_FROM_BOX:/workspace/boss-run-patch/llm-match-evaluator.mjs
