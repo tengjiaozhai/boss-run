@@ -1,6 +1,6 @@
 import { completes } from '@geekgeekrun/utils/gpt-request.mjs'
 import { formatResumeJsonToMarkdown, checkIsResumeContentValid } from '@geekgeekrun/utils/resume.mjs'
-import { readConfigFile, readStorageFile, writeStorageFile, readActiveResume } from './runtime-file-utils.mjs'
+import { readConfigFile, readStorageFile, writeStorageFile, readAllResumes } from './runtime-file-utils.mjs'
 
 const RESUME_PLACEHOLDER = `__REPLACE_REAL_RESUME_HERE__`
 const JOB_INFO_PLACEHOLDER = `__REPLACE_JOB_INFO_HERE__`
@@ -233,11 +233,17 @@ const calibrateScore = (score, subScores, report, { salaryDesc } = {}) => {
   return calibrated
 }
 
-export const evaluateJobMatch = async (targetJobData, { timeout } = {}) => {
-  const resumeObject = await readActiveResume()
-  if (!resumeObject || !checkIsResumeContentValid(resumeObject)) {
-    throw new Error('RESUME_NOT_CONFIGURED')
-  }
+const getResumeDisplayName = (resumeObject) => {
+  return (
+    resumeObject?.content?.name?.trim() ||
+    resumeObject?.content?.expectJob?.trim() ||
+    resumeObject?.name?.trim() ||
+    resumeObject?.id ||
+    '未命名简历'
+  )
+}
+
+const evaluateJobMatchWithResume = async (targetJobData, resumeObject, { timeout } = {}) => {
   const resumeCacheKey = JSON.stringify(resumeObject)
   if (resumeCacheKey !== cachedResumeKey) {
     cachedResumeMarkdown = formatResumeJsonToMarkdown(resumeObject)
@@ -385,4 +391,49 @@ export const evaluateJobMatch = async (targetJobData, { timeout } = {}) => {
 
   console.log('AI match: all attempts exhausted, returning null')
   return null
+}
+
+export const evaluateJobMatch = async (targetJobData, { timeout } = {}) => {
+  const allResumes = await readAllResumes()
+  const validResumes = allResumes.filter((it) => checkIsResumeContentValid(it))
+  if (!validResumes.length) {
+    throw new Error('RESUME_NOT_CONFIGURED')
+  }
+
+  let best = null
+  for (const resumeObject of validResumes) {
+    const resumeName = getResumeDisplayName(resumeObject)
+    console.log(`AI match: evaluating resume ${resumeName} (${resumeObject.id ?? 'no-id'})`)
+    const result = await evaluateJobMatchWithResume(targetJobData, resumeObject, { timeout })
+    if (!result) {
+      console.log(`AI match: resume ${resumeName} returned null, skipping`)
+      continue
+    }
+    const enriched = {
+      ...result,
+      resumeId: resumeObject.id ?? null,
+      resumeName,
+      resumeActive: !!resumeObject.active
+    }
+    console.log(`AI match: resume ${resumeName} score=${enriched.score}`)
+    if (
+      !best ||
+      enriched.score > best.score ||
+      (enriched.score === best.score && enriched.resumeActive && !best.resumeActive)
+    ) {
+      best = enriched
+    }
+  }
+
+  if (!best) {
+    return null
+  }
+
+  if (validResumes.length > 1) {
+    const prefix = `【选用简历：${best.resumeName}】`
+    best.report = best.report ? `${prefix}\n${best.report}` : prefix
+    console.log(`AI match: selected best resume ${best.resumeName} with score=${best.score}`)
+  }
+
+  return best
 }
