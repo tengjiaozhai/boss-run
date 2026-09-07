@@ -351,3 +351,8 @@ export const readActiveResume = async () => {
   const list = normalizeResumesList(await readConfigFile('resumes.json'))
   return list.find((it) => it.active) ?? list[0] ?? null
 }
+
+// 读取全部简历条目（已 normalize）；调用方自行过滤有效内容
+export const readAllResumes = async () => {
+  return normalizeResumesList(await readConfigFile('resumes.json'))
+}
